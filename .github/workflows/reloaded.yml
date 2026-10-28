@@ -45,7 +45,7 @@ jobs:
 
     - name: Build Proxy DLL (d3d12.dll)
       run: |
-        cmake -S DLL-SCSKiller/proxy -B DLL-SCSKiller/proxy/build -A x64 -DSCSK_VERSION=1.0.0
+        cmake -S DLL-SCSKiller/proxy -B DLL-SCSKiller/proxy/build -A x64 '-DSCSK_VERSION=1.0.0'
         cmake --build DLL-SCSKiller/proxy/build --config Release
 
     - name: Build Reloaded-II Mod

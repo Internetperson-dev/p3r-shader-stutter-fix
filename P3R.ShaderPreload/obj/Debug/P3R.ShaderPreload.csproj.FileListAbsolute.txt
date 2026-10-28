@@ -1,0 +1,15 @@
+/home/ram/Projects/p3r-shader-stutter-fix/P3R.ShaderPreload/obj/Debug/P3R.ShaderPreload.csproj.AssemblyReference.cache
+/home/ram/Projects/p3r-shader-stutter-fix/P3R.ShaderPreload/obj/Debug/P3R.ShaderPreload.GeneratedMSBuildEditorConfig.editorconfig
+/home/ram/Projects/p3r-shader-stutter-fix/P3R.ShaderPreload/obj/Debug/P3R.ShaderPreload.AssemblyInfoInputs.cache
+/home/ram/Projects/p3r-shader-stutter-fix/P3R.ShaderPreload/obj/Debug/P3R.ShaderPreload.AssemblyInfo.cs
+/home/ram/Projects/p3r-shader-stutter-fix/P3R.ShaderPreload/obj/Debug/P3R.ShaderPreload.csproj.CoreCompileInputs.cache
+/tmp/opencode/out/P3R.ShaderPreload/Preview.png
+/tmp/opencode/out/P3R.ShaderPreload/ModConfig.json
+/tmp/opencode/out/P3R.ShaderPreload/P3R.ShaderPreload.deps.json
+/tmp/opencode/out/P3R.ShaderPreload/P3R.ShaderPreload.dll
+/tmp/opencode/out/P3R.ShaderPreload/P3R.ShaderPreload.pdb
+/home/ram/Projects/p3r-shader-stutter-fix/P3R.ShaderPreload/obj/Debug/P3R.Shad.23103713.Up2Date
+/home/ram/Projects/p3r-shader-stutter-fix/P3R.ShaderPreload/obj/Debug/P3R.ShaderPreload.dll
+/home/ram/Projects/p3r-shader-stutter-fix/P3R.ShaderPreload/obj/Debug/refint/P3R.ShaderPreload.dll
+/home/ram/Projects/p3r-shader-stutter-fix/P3R.ShaderPreload/obj/Debug/P3R.ShaderPreload.pdb
+/home/ram/Projects/p3r-shader-stutter-fix/P3R.ShaderPreload/obj/Debug/ref/P3R.ShaderPreload.dll

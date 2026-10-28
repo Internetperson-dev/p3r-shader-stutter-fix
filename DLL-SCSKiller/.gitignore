@@ -1,0 +1,20 @@
+# build outputs
+proxy/build/
+__pycache__/
+
+# game content and third-party binaries: never commit
+out/
+*.db
+*.usmap
+*.dll
+
+# runtime artifacts
+*.log
+*.csv
+!tests/SCSKiller.Tests/Fixtures/**/*.csv
+bin/
+obj/
+.claude/
+
+# packaging output (build/publish.ps1)
+dist/

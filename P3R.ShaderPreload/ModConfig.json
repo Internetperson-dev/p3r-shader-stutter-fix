@@ -1,0 +1,21 @@
+{
+  "ModId": "P3R.ShaderPreload",
+  "ModName": "Preload Persona 3 Reload Shaders",
+  "ModAuthor": "Internetperson-dev",
+  "ModVersion": "1.0.0",
+  "ModDescription": "Reduces shader compilation stutter in Persona 3 Reload by preloading shaders.",
+  "ModDll": "P3R.ShaderPreload.dll",
+  "ModIcon": "Preview.png",
+  "ModR2RManagedDll32": "x86/P3R.ShaderPreload.dll",
+  "ModR2RManagedDll64": "x64/P3R.ShaderPreload.dll",
+  "ModNativeDll32": "",
+  "ModNativeDll64": "",
+  "IsLibrary": false,
+  "ReleaseMetadataFileName": "P3R.ShaderPreload.ReleaseMetadata.json",
+  "PluginData": {},
+  "IsUniversalMod": false,
+  "ModDependencies": [ "reloaded.sharedlib.hooks" ],
+  "OptionalDependencies": [],
+  "SupportedAppId": [],
+  "ProjectUrl": ""
+}

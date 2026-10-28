@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "dgSpecHash": "GEVazT57isY=",
+  "success": true,
+  "projectFilePath": "/home/ram/Projects/p3r-shader-stutter-fix/P3R.ShaderPreload/P3R.ShaderPreload.csproj",
+  "expectedPackageFiles": [
+    "/home/ram/.nuget/packages/microsoft.net.illink.tasks/9.0.3/microsoft.net.illink.tasks.9.0.3.nupkg.sha512",
+    "/home/ram/.nuget/packages/reloaded.hooks.definitions/1.11.0/reloaded.hooks.definitions.1.11.0.nupkg.sha512",
+    "/home/ram/.nuget/packages/reloaded.mod.interfaces/2.4.0/reloaded.mod.interfaces.2.4.0.nupkg.sha512",
+    "/home/ram/.nuget/packages/reloaded.sharedlib.hooks/1.9.0/reloaded.sharedlib.hooks.1.9.0.nupkg.sha512",
+    "/home/ram/.nuget/packages/microsoft.netcore.app.ref/9.0.21/microsoft.netcore.app.ref.9.0.21.nupkg.sha512",
+    "/home/ram/.nuget/packages/microsoft.aspnetcore.app.ref/9.0.21/microsoft.aspnetcore.app.ref.9.0.21.nupkg.sha512"
+  ],
+  "logs": []
+}

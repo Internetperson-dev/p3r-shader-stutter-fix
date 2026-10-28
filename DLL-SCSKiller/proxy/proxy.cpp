@@ -5857,9 +5857,10 @@ static void prelaunch_run() {
     if (GetFileAttributesW(warm_exe) == INVALID_FILE_ATTRIBUTES)
         wcscpy_s(warm_exe, L"scskiller_warm.exe");
 
-    std::wstring cmd = L"\"" + std::wstring(warm_exe) + L\" \" + wdir + L\" \" + fname +
-        L" --threads " + std::to_wstring(std::max(1, (int)std::thread::hardware_concurrency() - 2)) +
-        L" --priority below";
+    wchar_t cmd_buf[2048];
+    swprintf_s(cmd_buf, L"\"%ls\" \"%ls\" \"%ls\" --threads %d --priority below",
+                warm_exe, wdir.c_str(), fname,
+                std::max(1, (int)std::thread::hardware_concurrency() - 2));
 
     STARTUPINFOW si{ sizeof(si) };
     PROCESS_INFORMATION pi{};
@@ -5872,7 +5873,7 @@ static void prelaunch_run() {
     si.hStdError = wr;
     si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
 
-    if (!CreateProcessW(nullptr, (LPWSTR)cmd.c_str(), nullptr, nullptr, TRUE,
+    if (!CreateProcessW(nullptr, (LPWSTR)cmd_buf, nullptr, nullptr, TRUE,
         CREATE_NO_WINDOW, nullptr, wdir.empty() ? nullptr : wdir.c_str(),
         &si, &pi)) {
         const wchar_t* err = L"Failed to launch scskiller_warm.exe: shaders won't be prebuilt.\n";

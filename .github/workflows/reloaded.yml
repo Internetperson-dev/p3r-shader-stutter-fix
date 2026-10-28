@@ -48,17 +48,22 @@ jobs:
         cmake -S DLL-SCSKiller/proxy -B DLL-SCSKiller/proxy/build -A x64 '-DSCSK_VERSION=1.0.0'
         cmake --build DLL-SCSKiller/proxy/build --config Release
 
-    - name: Build Reloaded-II Mod
-      run: ./P3R.ShaderPreload/Publish.ps1 -ChangelogPath "$env:PUBLISH_CHANGELOG_PATH"
+    - name: Build Reloaded-II Mod (direct dotnet publish)
+      run: dotnet publish P3R.ShaderPreload/P3R.ShaderPreload.csproj -c Release --self-contained false -o Publish/ModBuild
 
     - name: Package Combined Output
       run: |
         New-Item -ItemType Directory -Force -Path "./Publish/Combined" | Out-Null
-        # Copy proxy DLL
+        # Copy proxy DLL (shader preload)
         Copy-Item "DLL-SCSKiller/proxy/build/Release/d3d12.dll" "./Publish/Combined/d3d12.dll" -ErrorAction SilentlyContinue
         Copy-Item "DLL-SCSKiller/proxy/build/Release/d3d12.pdb" "./Publish/Combined/d3d12.pdb" -ErrorAction SilentlyContinue
-        # Copy Reloaded-II mod output
-        Get-ChildItem -Path "$env:PUBLISH_GITHUB_PATH" -Recurse | Copy-Item -Destination "./Publish/Combined/" -Force -Recurse -ErrorAction SilentlyContinue
+        # Copy Reloaded-II mod build files (Config.json, ModConfig.json, DLLs from Inject/ if configured)
+        Copy-Item "P3R.ShaderPreload/ConfigSchema.json" "./Publish/Combined/" -ErrorAction SilentlyContinue
+        # Deploy inject files based on config
+        if (Test-Path "P3R.ShaderPreload/Inject/d3d12.dll") { Copy-Item "P3R.ShaderPreload/Inject/d3d12.dll" "./Publish/Combined/" -Force }
+        if (Test-Path "P3R.ShaderPreload/Inject/d3d12.pdb") { Copy-Item "P3R.ShaderPreload/Inject/d3d12.pdb" "./Publish/Combined/" -Force }
+        # Copy published .NET output
+        Get-ChildItem -Path "Publish/ModBuild" -Recurse | Where-Object { $_.Name -notlike "*.pdb" -and $_.Name -notlike "*.xml" } | Copy-Item -Destination "./Publish/Combined/" -Force -Recurse -ErrorAction SilentlyContinue
 
     - name: Upload Combined Artifact
       uses: actions/upload-artifact@v4

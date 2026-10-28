@@ -1,0 +1,5 @@
+2026-10-23 22:17:57.076 pid=324 event=p3r_set_pipeline_state_routes_ready win32=0
+2026-10-23 22:17:57.086 pid=324 event=proxy_loaded win32=0
+2026-10-23 22:18:00.971 pid=324 event=startup_indicator_created win32=0
+2026-10-23 22:18:43.276 pid=324 event=async_stream_active win32=0
+2026-10-23 22:18:43.294 pid=324 event=async_indicator_created win32=0

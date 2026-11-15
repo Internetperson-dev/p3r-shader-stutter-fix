@@ -7,7 +7,7 @@ namespace SCSKiller.Core.App;
 /// <summary>A game's recording: SCSKiller's copy (games\&lt;id&gt;\recording.db, compact: <see cref="PsoDb.WriteCompact"/>)
 /// is the durable one, and the recorder's scskiller.db in the game folder is an inbox, emptied once imported. The recorder
 /// skips what the copy already has, and the bytes of the shaders the game ships, through <see cref="KeysFile"/>, next to
-/// its scskiller.ini.</summary>
+/// its scskiller.cfg.</summary>
 public static class Recordings
 {
     public const string KeysFile = "scskiller.keys";
@@ -28,8 +28,9 @@ public static class Recordings
     /// of every pipeline it created, a plan item's from its template with the item's shaders and root signature, as the
     /// proxy's rec_tuple does. What the materialize skipped isn't in the dbs; an item one of <paramref name="failed"/>
     /// (<see cref="FailedFile"/>s) names, by its record's key, wasn't created and counts for nothing. <paramref name="previous"/>:
-    /// an earlier warm's file whose keys and tuples still hold (a warm that left out what it created, CompiledItems).</summary>
-    public static byte[] Warmed(IEnumerable<string> dbs, IEnumerable<string> failed, byte[]? previous = null)
+    /// an earlier warm's file whose keys and tuples still hold (a warm that left out what it created, CompiledItems).
+    /// <paramref name="created"/>: keys a warm created that no db holds (a Vulkan warm's, VulkanPlan.Created), no tuples.</summary>
+    public static byte[] Warmed(IEnumerable<string> dbs, IEnumerable<string> failed, byte[]? previous = null, IEnumerable<string>? created = null)
     {
         var notCreated = new HashSet<string>(StringComparer.Ordinal);
         foreach (var f in failed.Where(File.Exists))
@@ -44,6 +45,7 @@ public static class Recordings
             keys.UnionWith(hashes.Take((int)pn));
             tuples.UnionWith(hashes.Skip((int)pn));
         }
+        keys.UnionWith(created ?? []);
         foreach (var db in dbs.Where(File.Exists))
             foreach (var r in Read(db))
             {
@@ -147,11 +149,16 @@ public static class Recordings
     /// order, as a compact recording at <paramref name="store"/>. A shader blob that a record names and <paramref name="shipped"/>
     /// has is left out: the install gives it back (<see cref="Rehydrate"/>); root signatures and every other blob stay. Returns
     /// the keys of the pipeline and state object records it added.</summary>
-    public static HashSet<string> Merge(string store, string? inbox, Func<string, bool>? shipped) => Merge(store, inbox, shipped, out _);
+    public static HashSet<string> Merge(string store, string? inbox, Func<string, bool>? shipped) => Merge(store, inbox, shipped, out _, out _);
+
+    /// <summary>A record the page counts as recorded: a pipeline, a state object or an addition to one.</summary>
+    public static bool Counted(char tag) => tag is 'G' or 'C' or 'S' or 'R' or 'A';
 
     /// <param name="nvAdded">an 'N' record the store lacked was added: the plan may take another NVAPI state for the PSOs it
     /// synthesizes (<see cref="PlanBuilder.RasterNv"/>)</param>
-    public static HashSet<string> Merge(string store, string? inbox, Func<string, bool>? shipped, out bool nvAdded)
+    /// <param name="pipelines">the pipelines and state objects the store holds after the merge</param>
+    /// <param name="aftermath">takes the place of the store's <see cref="HashOnly.IsAftermath"/> records (none: they stay)</param>
+    public static HashSet<string> Merge(string store, string? inbox, Func<string, bool>? shipped, out bool nvAdded, out int pipelines, Rec[]? aftermath = null)
     {
         var hasStore = File.Exists(store);
         var hasInbox = inbox != null && File.Exists(inbox);
@@ -160,23 +167,27 @@ public static class Recordings
         var named = shipped == null ? [] : Rehydrate.References(Sources().Where(r => r.Tag != 'B'));
         var seen = new HashSet<string>();
         var added = new HashSet<string>();
+        var count = 0;
         IEnumerable<Rec> Union()
         {
-            if (hasStore) foreach (var r in Read(store)) if (seen.Add(Id(r))) yield return r;
+            if (hasStore) foreach (var r in Read(store)) if (!(aftermath != null && HashOnly.IsAftermath(r)) && seen.Add(Id(r))) { if (Counted(r.Tag)) count++; yield return r; }
             if (hasInbox)
                 foreach (var r in Read(inbox!))
-                    if (Id(r) is var id && seen.Add(id))
+                    if (!(aftermath != null && HashOnly.IsAftermath(r)) && Id(r) is var id && seen.Add(id))
                     {
+                        if (Counted(r.Tag)) count++;
                         if (r.Tag == 'N') nv = true;
                         else if (r.Tag is not ('B' or 'W')) added.Add(id);   // its key: one string for both sets
                         yield return r;
                     }
+            foreach (var r in aftermath ?? []) yield return r;
         }
         bool Dropped(Rec r) => r.Tag == 'B' && shipped != null && Hex(r.Payload.AsSpan(0, 20)) is var h && named.Contains(h) && shipped(h)
                                && !Dxbc.IsRootSignatureOnly(r.Payload.AsSpan(20));
         WriteCompact(store, Union().Where(r => !Dropped(r)));
         KeyFiles.Forget(store);
         nvAdded = nv;
+        pipelines = count;
         return added;
     }
 
@@ -203,10 +214,10 @@ public static class Recordings
         bool Kept(Rec r) => r.Tag == 'N' || Rehydrate.References([r]).All(h => blobs.Contains(h) || shipped?.Contains(h) == true);
         if (publish?.Invoke() == false) return Records().Count(r => !Kept(r));   // nothing created or deleted
         var (kept, left) = (0, 0);
-        var tmp = path + ".tmp";
+        var (file, tmp) = ScsKiller.CreateTemp(path, ".tmp");
         try
         {
-            using (var f = new BufferedStream(File.Create(tmp), 1 << 16))
+            using (var f = new BufferedStream(file, 1 << 16))
             {
                 f.Write(KeysMagic);
                 foreach (var h in blobs) f.Write(Convert.FromHexString(h));
@@ -225,7 +236,13 @@ public static class Recordings
             else
             {
                 BeforeKeysPublished?.Invoke();
-                if (publish?.Invoke() != false) File.Move(tmp, path, true);
+                if (publish?.Invoke() != false)
+                {
+                    ScsKiller.RefuseLink(path);
+                    var sha = ScsKiller.WriteHash(tmp);
+                    File.Move(tmp, path, true);
+                    ScsKiller.Wrote(path, sha);
+                }
             }
         }
         finally { File.Delete(tmp); }
@@ -357,9 +374,9 @@ public static class Recordings
     {
         try
         {
-            using var f = new FileStream(inbox, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
-            if (f.Length != imported) return false;
-            f.SetLength(0);
+            using var h = Games.GameFiles.OpenUnlinked(inbox);   // a link planted at its name would empty what it points to
+            if (RandomAccess.GetLength(h) != imported) return false;
+            RandomAccess.SetLength(h, 0);
             return true;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }

@@ -21,10 +21,11 @@ public sealed class RulesFile
     /// parameters; rs.select.v1: a construction shape in code (<see cref="RsShapes"/>); stagesets.v1: an allow-list of stage
     /// sets; rt.collection.v1: a ray tracing collection rule (<see cref="RtShapes"/>); rt.noconfig.v1: collections without a state
     /// object config (<see cref="RtRule.Config"/>); rs.re.v1: RE Engine's construction with its parameters (<see cref="ReRule"/>);
-    /// rs.re.v2: its <see cref="ReRule.DenyMesh"/>, <see cref="ReRule.CbvUavAbove"/> and <see cref="ReRule.BindlessSpaces"/>;
-    /// rs.samplers.v1: static samplers as raw descriptions; rs.stock.v2: <see cref="StockRule.DenyMesh"/>; rt.nv.v1: <see cref="RtRule.Nv"/>;
-    /// amd.ags.v1: <see cref="PlanRule.Ags"/>; nv.aftermath.v1: <see cref="PlanRule.Aftermath"/>; d3ds.identity.v1: an <see cref="IdentityRule"/>, alone.</summary>
-    public static readonly IReadOnlySet<string> Capabilities = new HashSet<string> { "rs.desc.v1", "rs.desc.v2", "rs.stock.v1", "rs.select.v1", "stagesets.v1", "rt.collection.v1", "rt.noconfig.v1", "rs.re.v1", "rs.re.v2", "rs.samplers.v1", "rs.stock.v2", "rt.nv.v1", "amd.ags.v1", "nv.aftermath.v1", IdentityCap };
+    /// rs.re.v2: its <see cref="ReRule.DenyMesh"/>, <see cref="ReRule.CbvUavAbove"/> and <see cref="ReRule.BindlessSpaces"/>; rs.re.v3: its <see cref="ReRule.OtherCbvBase"/>;
+    /// rs.samplers.v1: static samplers as raw descriptions; rs.stock.v2: <see cref="StockRule.DenyMesh"/>; rs.stock.v3: <see cref="StockRule.NvExtensionEverywhere"/>; rt.nv.v1: <see cref="RtRule.Nv"/>;
+    /// amd.ags.v1: <see cref="PlanRule.Ags"/>; amd.ags.v2: its <see cref="AgsRule.Registrations"/>; nv.aftermath.v1: <see cref="PlanRule.Aftermath"/>; vi.v1: <see cref="PlanRule.ViewInstancing"/>;
+    /// passnames.v1: <see cref="PlanRule.PassNames"/>; d3ds.identity.v1: an <see cref="IdentityRule"/>, alone.</summary>
+    public static readonly IReadOnlySet<string> Capabilities = new HashSet<string> { "rs.desc.v1", "rs.desc.v2", "rs.stock.v1", "rs.select.v1", "stagesets.v1", "rt.collection.v1", "rt.noconfig.v1", "rs.re.v1", "rs.re.v2", "rs.re.v3", "rs.samplers.v1", "rs.stock.v2", "rs.stock.v3", "rt.nv.v1", "amd.ags.v1", "amd.ags.v2", "nv.aftermath.v1", "vi.v1", "passnames.v1", IdentityCap };
 
     public const string IdentityCap = "d3ds.identity.v1";
 
@@ -32,7 +33,7 @@ public sealed class RulesFile
     /// SRV tables of 128 when a shader carries Avalanche's bindless marker (<see cref="RootSig.MaxSrvsFor"/>); dagor /
     /// dagorCbvRanges: built from each shader's header (<see cref="Dagor.DagorRootSig"/>), constant buffers as root CBVs or in
     /// tables.</summary>
-    public static readonly IReadOnlySet<string> RsShapes = new HashSet<string> { "ff7", "bindless", "spaceBindless", "avalancheSrvs", "dagor", "dagorCbvRanges" };
+    public static readonly IReadOnlySet<string> RsShapes = new HashSet<string> { "ff7", "bindless", "spaceBindless", "avalancheSrvs", "dagor", "dagorCbvRanges", "snowdrop" };
 
     /// <summary>avalancheGlobal: Avalanche's fork's global root signature when the libraries carry its marker
     /// (<see cref="RtCollections.GlobalFor"/>); ue5Shape: only for libraries of 5.1's binding shape
@@ -131,10 +132,22 @@ public sealed class RulesFile
             || m.Fork != null && !(m.Fork is { Length: > 0 and <= 64 } && m.Fork.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-' or ' '))
             || m.Games != null && (!Needs("rs.desc.v2") || m.Games.Length is 0 or > 16 || !m.Games.All(g => ContentFile.Text(g, 64) && g.Contains(':'))))
             return "bad match";
-        if (r.RootSignature == null && r.Rt == null && r.Ags == null && r.Aftermath == null) return "no rule";
-        if (r.Ags is { } ags && (!Needs("amd.ags.v1") || r.RootSignature != null || r.Rt != null
+        if (r.RootSignature == null && r.Rt == null && r.Ags == null && r.Aftermath == null && r.ViewInstancing == null && r.PassNames == null) return "no rule";
+        if (r.PassNames is { } pn && (!Needs("passnames.v1") || r.RootSignature != null || r.Rt != null || r.Ags != null || r.Aftermath != null || r.ViewInstancing != null
+                || pn.Count is 0 or > 4096 || !pn.All(p => p.Key is { Length: 8 } && p.Key.All(char.IsAsciiHexDigitLower) && p.Value is { Length: > 0 and <= 64 } && p.Value.All(c => char.IsAsciiLetterOrDigit(c) || c == '_'))))
+            return "bad passNames";
+        if (r.ViewInstancing is { } vi && (!Needs("vi.v1") || r.RootSignature != null || r.Rt != null || r.Ags != null || r.Aftermath != null || !ContentFile.Text(vi.Note, 300)
+                || vi.Views is not { Length: >= 1 and <= 4 } || vi.Views.Any(v => v is not [< 16, < 2048]) || vi.Flags > 1
+                || vi.Libraries is { } libs && (libs.Length is 0 or > 256 || !libs.All(l => ContentFile.Text(l, 64)))))
+            return "bad viewInstancing";
+        static bool Hex8(string? v) => v == null || v is { Length: 8 } && v.All(char.IsAsciiHexDigit);
+        if (r.Ags is { } ags && (!(Needs("amd.ags.v1") || Needs("amd.ags.v2")) || r.RootSignature != null || r.Rt != null
+                || (ags.Profiles != null || ags.Proven != null) && !Needs("amd.ags.v1")
                 || ags.Profiles?.All(p => ContentFile.Text(p.Key, 64) && p.Value is { Length: 8 } && p.Value.All(char.IsAsciiHexDigit)) == false
-                || ags.Proven?.All(a => ContentFile.Text(a, 64)) == false))
+                || ags.Proven?.All(a => ContentFile.Text(a, 64)) == false
+                || ags.Registrations is { } regs && (!Needs("amd.ags.v2") || regs.Count is 0 or > 4096
+                    || !regs.All(p => ContentFile.Text(p.Key, 64) && p.Key.Contains(':') && p.Value is { } v
+                        && (v.Engine == null || ContentFile.Text(v.Engine, 64)) && Hex8(v.AppVersion) && Hex8(v.EngineVersion)))))
             return "bad ags";
         if (r.Aftermath is { } am && (!Needs("nv.aftermath.v1") || r.RootSignature != null || r.Rt != null || r.Ags != null || am.Count == 0
                 || !am.All(p => ContentFile.Text(p.Key, 64) && p.Key.Contains(':') && p.Value is { Version: > 0, Features: > 0 })))
@@ -146,7 +159,7 @@ public sealed class RulesFile
                 return "bad samplers";
             var samplers = RootSig.StaticSamplers(r);
             if (rs.Select != null && (!Needs("rs.select.v1") || !rs.Select.All(s => s != null && RsShapes.Contains(s)))) return "bad select";
-            var shapes = rs.Select?.Count(s => s is "ff7" or "dagor" or "dagorCbvRanges") ?? 0;
+            var shapes = rs.Select?.Count(s => s is "ff7" or "dagor" or "dagorCbvRanges" or "snowdrop") ?? 0;
             if (rs.ByStages != null)
             {
                 if (!Needs("rs.desc.v1") || rs.Stock != null || rs.Select != null || rs.Re != null || rs.ByStages.Length == 0) return "bad byStages";
@@ -164,15 +177,16 @@ public sealed class RulesFile
             {
                 if (!Needs("rs.re.v1") || rs.Stock != null || rs.Select != null || re.CbvBase > 14 || re.ComputeUavs is 0 or > 1_000_000
                         || (!re.DenyMesh || re.CbvUavAbove || re.BindlessSpaces > 0) && !Needs("rs.re.v2") || re.BindlessSpaces > 16
+                        || re.OtherCbvBase is { } other && (!Needs("rs.re.v3") || other > re.CbvBase)
                         || !Sizes(re.CbvSizes) || !Sizes(re.SrvSizes) || !Sizes(re.UavSizes))
                     return "bad re";
                 foreach (var stages in new[] { new[] { Stage.Compute }, [Stage.Vertex, Stage.Pixel] })
-                    try { RootSig.Serialize(RootSig.BuildRe(re, stages, re.CbvSizes[^1], re.SrvSizes[^1], re.UavSizes[^1]), samplers); }
+                    try { RootSig.Serialize(RootSig.BuildRe(re, stages, re.CbvSizes[^1] + re.CbvBase - (re.OtherCbvBase ?? re.CbvBase), re.SrvSizes[^1], re.UavSizes[^1]), samplers); }
                     catch (RootSig.SerializeException e) { return $"a description doesn't serialize ({e.Message})"; }
             }
             else if (shapes > 1 || (shapes == 1) == (rs.Stock != null)) return "no single construction";
             if (rs.Stock is { } p && (!Needs("rs.stock.v1") || !Stages(p.Stages) || p.Stages.Contains("CS") || !Stages(p.UavStages, empty: true)
-                    || p.MaxSrvs is 0 or > 1_000_000 || p.MaxSamplers is 0 or > 2048 || p.DenyMesh && !Needs("rs.stock.v2")))
+                    || p.MaxSrvs is 0 or > 1_000_000 || p.MaxSamplers is 0 or > 2048 || p.DenyMesh && !Needs("rs.stock.v2") || p.NvExtensionEverywhere && !Needs("rs.stock.v3")))
                 return "bad stock";
         }
         if (r.Rt is { } rt)
@@ -233,14 +247,20 @@ public sealed class RulesFile
         return m.Select(r => r.Writes).Distinct().Count() == 1 ? m[0] : null;
     }
 
-    /// <summary>The root-signature rule matching the engine: one naming its fork first, then file order.</summary>
+    /// <summary>The root-signature rule matching the engine: one naming its fork first, then one naming the game, then file order.</summary>
     public PlanRule? RuleFor(EngineInfo e) => First(e, r => r.RootSignature != null);
 
     /// <summary>The ray tracing collection rule matching the engine (a plan without recorded collections uses it).</summary>
     public PlanRule? RtFor(EngineInfo e) => First(e, r => r.Rt != null);
 
+    /// <summary>The view instancing rule matching the engine (a shader reading SV_ViewID that no recorded PSO shows uses it).</summary>
+    public PlanRule? ViFor(EngineInfo e) => First(e, r => r.ViewInstancing != null);
+
+    /// <summary>The render pass name rule matching the engine (a BlackSpace pass the exe doesn't name uses it).</summary>
+    public PlanRule? PassNamesFor(EngineInfo e) => First(e, r => r.PassNames != null);
+
     PlanRule? First(EngineInfo e, Func<PlanRule, bool> kind) =>
-        Rules.Where(r => kind(r) && Matches(r.Match, e)).OrderBy(r => r.Match.Fork == null).FirstOrDefault();
+        Rules.Where(r => kind(r) && Matches(r.Match, e)).OrderBy(r => r.Match.Fork == null).ThenBy(r => r.Match.Games == null).FirstOrDefault();
 
     static bool Matches(RuleMatch m, EngineInfo e)
     {
@@ -257,7 +277,7 @@ public sealed class RulesFile
     /// only in layout hashes the same). A plan records it, and a change re-plans the game like a newer planner.</summary>
     public string Hash(EngineInfo e) =>
         Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(
-            new[] { RuleFor(e), RtFor(e) }.OfType<PlanRule>().DistinctBy(r => r.Id).OrderBy(r => r.Id, StringComparer.Ordinal), Canonical))))[..32];
+            new[] { RuleFor(e), RtFor(e), ViFor(e), PassNamesFor(e) }.OfType<PlanRule>().DistinctBy(r => r.Id).OrderBy(r => r.Id, StringComparer.Ordinal), Canonical))))[..32];
 
     /// <summary>The newest kept rules among stable's and those of <paramref name="channels"/> (<see cref="Channels"/>; null: not
     /// known yet, every copy kept), <see cref="ContentTrust.Cached"/>.</summary>
@@ -292,14 +312,32 @@ public sealed record IdentityWhen(string Read, string? Exe = null, string? Packa
 /// collection rule. <paramref name="Verified"/>: confirmed by a real game whatever confirmed-engines.json says.
 /// <paramref name="Ags"/>: AMD AGS app names for every game, whatever the match (<see cref="Vendors.AmdAppCache.AgsKey"/>); unset, it is
 /// left out of <see cref="RulesFile.Hash"/>'s serialization. <paramref name="Aftermath"/>: how each game (by id) starts NVIDIA
-/// Aftermath, whatever the match (<see cref="Vendors.NvAftermath.Of"/>), left out the same way.</summary>
+/// Aftermath, whatever the match (<see cref="Vendors.NvAftermath.Of"/>), left out the same way. <paramref name="ViewInstancing"/>:
+/// the view instancing the engine creates its SV_ViewID shaders with, left out the same way. <paramref name="PassNames"/>: render
+/// pass hash (8 lowercase hex digits) -> the name as the exe spells it, for passes whose name the exe holds in no readable form
+/// (<see cref="BlackSpace.BlackSpaceReader"/>), left out the same way.</summary>
 public sealed record PlanRule(string Id, string[] Requires, RuleMatch Match, RootSigRule? RootSignature = null, string[][]? StageSets = null,
     RtRule? Rt = null, bool Verified = false, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] AgsRule? Ags = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] Dictionary<string, Vendors.AftermathInit>? Aftermath = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] Dictionary<string, Vendors.AftermathInit>? Aftermath = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] ViRule? ViewInstancing = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] Dictionary<string, string>? PassNames = null);
+
+/// <summary>A D3D12_VIEW_INSTANCING_DESC: per view its viewport and render target array index, and its flags; for the
+/// shaders of these libraries (<see cref="ShaderMap.Library"/>; none: every library).</summary>
+public sealed record ViRule(string Note, uint[][] Views, uint Flags = 0, string[]? Libraries = null)
+{
+    public byte[] Bytes() => PsoDb.ViewInstancingBytes([.. Views.Select(v => (v[0], v[1]))], Flags);
+}
 
 /// <summary>Driver app profiles matched on the AGS app name, exact case: app name -> DxcCache key, 8 hex digits. Proven: app
 /// names whose game's own process was seen holding the key they give, registered before the game has been seen.</summary>
-public sealed record AgsRule(Dictionary<string, string>? Profiles = null, string[]? Proven = null);
+public sealed record AgsRule(Dictionary<string, string>? Profiles = null, string[]? Proven = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] Dictionary<string, AgsOverride>? Registrations = null);
+
+/// <summary>What a game's compiles register with AGS instead (<see cref="Vendors.AmdAgs.Registered"/>), by store id; a field
+/// left out keeps what the game is seen or known to register. <paramref name="Engine"/>: "-" registers none; the versions are
+/// 8 hex digits.</summary>
+public sealed record AgsOverride(string? Engine = null, string? AppVersion = null, string? EngineVersion = null);
 
 /// <summary>An engine family; an inclusive "major.minor" range of its versions (none: any version); a fork (none: any); the
 /// games (<see cref="EngineInfo.Game"/>, none: any) whose own roots the rule describes, each a store id ("steam:1895880": any
@@ -319,9 +357,11 @@ public sealed record RootSigRule(StockRule? Stock = null, string[]? Select = nul
 /// CBVs), the sizes its CBV, SRV and pixel shader UAV tables come in, its compute UAV table, the directly-indexed heap flag,
 /// denying the mesh and amplification stages (RE Village's flags don't), CBV and UAV tables sized above what the pipeline
 /// binds (as SRV tables always are), and the bindless tables after the rest: one per space 1 up to
-/// <paramref name="BindlessSpaces"/>, an unbounded SRV range t0 visible to every stage (RE Village: 8).</summary>
+/// <paramref name="BindlessSpaces"/>, an unbounded SRV range t0 visible to every stage (RE Village: 8). <paramref name="OtherCbvBase"/>:
+/// the base on GPUs other than NVIDIA's, where the engine binds fewer root CBVs (RE Requiem demo: 4 on NVIDIA, 0 elsewhere); null = the same.</summary>
 public sealed record ReRule(uint CbvBase, uint[] CbvSizes, uint[] SrvSizes, uint[] UavSizes, uint ComputeUavs, bool HeapIndexed = false,
-    bool DenyMesh = true, bool CbvUavAbove = false, uint BindlessSpaces = 0);
+    bool DenyMesh = true, bool CbvUavAbove = false, uint BindlessSpaces = 0,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] uint? OtherCbvBase = null);
 
 /// <summary>Stock Unreal's parameters (<see cref="RootSig"/>'s BuildStock): its stage list in priority order, MAX_SRVS and
 /// MAX_SAMPLERS, the stages with a UAV table, tables only for the resource types a stage binds, the input-layout flag only
@@ -330,7 +370,8 @@ public sealed record ReRule(uint CbvBase, uint[] CbvSizes, uint[] SrvSizes, uint
 /// signature whatever the stages list (<paramref name="DenyMesh"/>: Kuro's 4.26 fork). Unset, it is left out of <see cref="RulesFile.Hash"/>'s serialization.</summary>
 public sealed record StockRule(string[] Stages, uint MaxSrvs, uint MaxSamplers, string[] UavStages, bool TablesWhenUsed = false,
     bool LayoutNeedsVertexInput = false, bool GrowSrvs = false, bool Ags = false, bool RootConstants = false, bool Diagnostic = false, bool HeapFlags = false,
-    bool NvExtension = false, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool DenyMesh = false);
+    bool NvExtension = false, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool DenyMesh = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool NvExtensionEverywhere = false);
 
 /// <summary>An entry of <see cref="RootSigRule.ByStages"/>; without a description the stages it names have none. It applies
 /// only when every shader of the pipeline declares no resource (<paramref name="BindsNothing"/>) and when one is shader

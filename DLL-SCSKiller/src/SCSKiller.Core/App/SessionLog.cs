@@ -36,10 +36,10 @@ public static class SessionLog
         public long? Start => launch.Start;
         public long? End => launch.End;
         public bool OtherExe;
-        public List<(double T, char Kind, double Ms, string? Key, long? Tid, bool Presents)> Creates => launch.Creates;
+        public List<(double T, char Kind, double Ms, string? Key, long? Tid, bool Presents, bool TupleKnown)> Creates => launch.Creates;
         public double LastT => Creates.Count > 0 ? Creates[^1].T : double.NegativeInfinity;
 
-        public long Hits, Compiles, StartupCompiles, Library, RayQuery, SoReady, SoCompiled, SoStartupCompiled, PlayHits, PlaySoReady;
+        public long Hits, Compiles, StartupCompiles, Library, RayQuery, SoReady, SoCompiled, SoStartupCompiled, PlayHits, PlaySoReady, TupleKnownCompiles;
         public double Worst;
 
         /// <summary>Compiles that end by <paramref name="startup"/> (<see cref="FrameLog.InStartup"/>) or in one of
@@ -48,9 +48,9 @@ public static class SessionLog
         public Session Count(IReadOnlySet<string>? rayQuery, double startup = double.NegativeInfinity, IReadOnlySet<long>? loads = null)
         {
             bool Started(double t) => FrameLog.InStartup(t, startup) || loads != null && FrameLog.InLoad(t, loads);
-            Hits = Compiles = StartupCompiles = Library = RayQuery = SoReady = SoCompiled = SoStartupCompiled = PlayHits = PlaySoReady = 0;
+            Hits = Compiles = StartupCompiles = Library = RayQuery = SoReady = SoCompiled = SoStartupCompiled = PlayHits = PlaySoReady = TupleKnownCompiles = 0;
             Worst = 0;
-            foreach (var (t, kind, ms, key, _, _) in Creates)
+            foreach (var (t, kind, ms, key, _, _, tupleKnown) in Creates)
             {
                 if (!char.IsUpper(kind)) { Library++; continue; }
                 bool play = !Started(t);
@@ -66,6 +66,8 @@ public static class SessionLog
                 if (ms <= CompileMs) { Hits++; if (play) PlayHits++; }
                 else if (Started(t)) StartupCompiles++;
                 else Compiles++;
+                // the last compile compiled a pipeline of these shaders and root signature: the miss is its state's
+                if (ms > CompileMs && tupleKnown) TupleKnownCompiles++;
                 if (!Started(t)) Worst = Math.Max(Worst, ms);
             }
             return this;
@@ -137,10 +139,11 @@ public static class SessionLog
         DateTimeOffset? firstAfter = null, long minCreates = 1, IReadOnlySet<string>? rayQuery = null, PlayWindow? played = null,
         FrameReport? frames = null) => Read(csvPath, out framesMatch, out _, exeFileName, firstAfter, minCreates, rayQuery, played, frames);
 
-    /// <summary>The same, and the game's last AGS registration (<see cref="LastAgs"/>) from the same pass.</summary>
+    /// <summary>The same, and the game's last AGS registration (<see cref="LastAgs"/>) from the same pass. <paramref name="lastEnded"/>:
+    /// asked once the file is read, the last launch's process is gone, so it ended without its #end.</summary>
     public static (SessionStats? Last, LaunchedExe? Exe, LaunchCheck? First) Read(string csvPath, out bool framesMatch, out AgsRegistration? ags,
         string? exeFileName = null, DateTimeOffset? firstAfter = null, long minCreates = 1, IReadOnlySet<string>? rayQuery = null,
-        PlayWindow? played = null, FrameReport? frames = null)
+        PlayWindow? played = null, FrameReport? frames = null, Func<bool>? lastEnded = null)
     {
         (framesMatch, ags) = (false, null);
         if (!File.Exists(csvPath)) return (null, null, null);
@@ -152,7 +155,7 @@ public static class SessionLog
         {
             if (first == null && firstAfter is { } a && s is { Start: { } st, OtherExe: false } && st > a.ToUnixTimeMilliseconds()
                 && s.Count(rayQuery) is var c && c.Hits + c.Compiles >= minCreates)
-                first = new LaunchCheck(DateTimeOffset.FromUnixTimeMilliseconds(st), c.Hits, c.Compiles);
+                first = new LaunchCheck(DateTimeOffset.FromUnixTimeMilliseconds(st), c.Hits, c.Compiles, TupleKnown: c.TupleKnownCompiles);
         }
         Session? game = null;   // the last launch of exeFileName's (an unmarked launch counts: older proxies wrote no name)
         var launches = Launches(csvPath).ToList();
@@ -165,7 +168,7 @@ public static class SessionLog
             if (!other) game = cur;
             if (!other && l.Ags != null) ags = l.Ags;
         }
-        if (cur != null && (cur.End != null || cur.Exited(played))) Ended(cur);
+        if (cur != null && (cur.End != null || cur.Exited(played) || first == null && lastEnded?.Invoke() == true)) Ended(cur);
         framesMatch = game != null && frames != null && FrameLog.OwnerOf(launches, frames.LaunchUnixMs) == game.Launch;
         return (game?.Stats(played, rayQuery, framesMatch ? frames : null), exe, first);
     }
@@ -188,7 +191,7 @@ public static class SessionLog
         public bool FrameGen;       // a #framegen line: a frame generation module loaded (DLSS-G, XeSS)
         public bool FramesStopped;  // #frames,stopped: frame generation's swap chain with no hook on the game's frames, none follow
         public bool D3D11;          // #api,d3d11: the recorder ran as d3d11.dll, which writes no create rows
-        public readonly List<(double T, char Kind, double Ms, string? Key, long? Tid, bool Presents)> Creates = [];   // Tid null: an older proxy
+        public readonly List<(double T, char Kind, double Ms, string? Key, long? Tid, bool Presents, bool TupleKnown)> Creates = [];   // Tid null: an older proxy
     }
 
     /// <summary>The csv's launches, the one split both reports use: a <c>#session</c> line opens one; rows before any, after
@@ -246,7 +249,7 @@ public static class SessionLog
                 cur = new CsvLaunch();
             }
             cur.Creates.Add((t, f[1][0], ms2, f.Length > 5 ? f[5] : null,
-                f.Length > 8 && long.TryParse(f[7], CultureInfo.InvariantCulture, out var tid) ? tid : null, f.Length > 8 && f[8] == "1"));
+                f.Length > 8 && long.TryParse(f[7], CultureInfo.InvariantCulture, out var tid) ? tid : null, f.Length > 8 && f[8] == "1", f[3] == "1"));
         }
         if (cur != null) yield return Sorted(cur);
 
@@ -268,7 +271,8 @@ public static class SessionLog
     internal static AgsRegistration? AgsLine(string[] f)
     {
         if (f.Length != 6 || Unescape(f[4]) is not { Length: > 0 } app || Unescape(f[5]) is not { } engine) return null;
-        return new(app, engine);
+        static uint Version(string s) => uint.TryParse(s, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var v) ? v : AmdAgs.UnspecifiedVersion;
+        return new(app, engine, AppVersion: Version(f[2]), EngineVersion: Version(f[3]));
 
         static string? Unescape(string s)
         {
@@ -306,11 +310,14 @@ public static class SessionLog
 
     /// <summary>Writes the keys of the PSOs with a shader that traces rays inline (SFI0's RayQuery flag), one per line, of
     /// the dbs together: a PSO's shader bytes may be in another of them. They must carry the shader bytes (rehydrated).</summary>
-    public static void WriteRayQueryKeys(IEnumerable<string> dbs, string keysFile)
+    public static void WriteRayQueryKeys(IEnumerable<string> dbs, string keysFile, IEnumerable<PsoDb.Rec>? blobs = null) =>
+        WriteRayQueryKeys(dbs.Where(File.Exists).SelectMany(PsoDb.Read).Concat(blobs ?? []), new HashSet<string>(), keysFile);
+
+    /// <summary>The same of records, with the shaders that trace rays already in <paramref name="rayQuery"/> where their 'B' isn't among them.</summary>
+    internal static void WriteRayQueryKeys(IEnumerable<PsoDb.Rec> records, HashSet<string> rayQuery, string keysFile)
     {
-        var rayQuery = new HashSet<string>();
         var psos = new List<(string Key, ICollection<string> Stages)>();
-        foreach (var r in dbs.Where(File.Exists).SelectMany(PsoDb.Read))
+        foreach (var r in records)
             if (r.Tag == 'B') { if (r.Payload.Length > 20 && Dxbc.InlineRayTracing(r.Payload.AsSpan(20))) rayQuery.Add(PsoDb.Hex(r.Payload.AsSpan(0, 20))); }
             else if (r.Tag is 'G' or 'C' or 'S')
                 try { psos.Add((r.Key, PsoDb.Parse(r).Stages.Values)); }

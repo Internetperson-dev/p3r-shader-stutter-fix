@@ -53,9 +53,8 @@ public sealed partial class SettingsPage : Page
         {
             TextWrapping = TextWrapping.Wrap,
             Text = "For one session, SCSKiller puts its recorder (a d3d12.dll) next to the game's exe.\n\n"
-                + "Games with anti-cheat can treat the recorder as cheating and ban your account, during the session or later. No game is known to be safe.\n\n"
                 + "SCSKiller removes every file it places when the game exits, or after a crash at your next logon.\n\n"
-                + "Enabling the recorder in these games is at your own risk. SCSKiller isn't responsible for bans.",
+                + "Enabling the recorder in games with anti-cheat is at your own risk. SCSKiller isn't responsible for bans.",
         },
     };
 
@@ -93,6 +92,7 @@ public sealed partial class SettingsPage : Page
     /// <summary>--screenshots: the Patreon card at the top.</summary>
     public void ScrollToPatreon() => PatreonCard.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0, VerticalOffset = -16, AnimationDesired = false });
     public void ScrollToNewShaders() => NewShadersHeader.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0, VerticalOffset = 40, AnimationDesired = false });
+    public void ScrollToTraversal() => TraversalLabel.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0, VerticalOffset = 300, AnimationDesired = false });
 
     // SetCacheLimit is a global driver setting that needs admin: only after the user's explicit OK.
     async void OnApply(object _, RoutedEventArgs __)

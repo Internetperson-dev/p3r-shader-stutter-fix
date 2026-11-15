@@ -102,6 +102,24 @@
       }
     },
     {
+      "id": "ue-wukong",
+      "requires": ["rs.stock.v1"],
+      "match": {"family": "Unreal", "from": "5.0", "to": "5.0", "fork": "GAME_BlackMythWukong"},
+      "rootSignature": {
+        "stock": {
+          "stages": ["PS", "VS", "GS", "MS", "AS"],
+          "maxSrvs": 64,
+          "maxSamplers": 16,
+          "uavStages": ["PS", "CS"],
+          "tablesWhenUsed": true,
+          "ags": true,
+          "diagnostic": true,
+          "heapFlags": true
+        },
+        "staticSamplers": {"register": 0, "space": 1000}
+      }
+    },
+    {
       "id": "ue-5.1",
       "requires": ["rs.stock.v1"],
       "match": {"family": "Unreal", "from": "5.1", "to": "5.3"},
@@ -153,6 +171,26 @@
           "ags": true,
           "diagnostic": true,
           "heapFlags": true
+        },
+        "staticSamplers": {"register": 0, "space": 1000}
+      }
+    },
+    {
+      "id": "ue-5.5-eday",
+      "requires": ["rs.stock.v1", "rs.desc.v2", "rs.stock.v3"],
+      "match": {"family": "Unreal", "from": "5.5", "to": "5.7", "games": ["xbox:Microsoft.Fairlightbasegame_8wekyb3d8bbwe", "steam:3010850"]},
+      "rootSignature": {
+        "stock": {
+          "stages": ["PS", "VS", "GS", "MS", "AS"],
+          "maxSrvs": 64,
+          "maxSamplers": 32,
+          "uavStages": ["PS", "CS", "VS"],
+          "tablesWhenUsed": true,
+          "rootConstants": true,
+          "ags": true,
+          "diagnostic": true,
+          "heapFlags": true,
+          "nvExtensionEverywhere": true
         },
         "staticSamplers": {"register": 0, "space": 1000}
       }
@@ -354,6 +392,36 @@
       "rootSignature": {"select": ["dagorCbvRanges"]}
     },
     {
+      "id": "carved-zouna",
+      "requires": ["rs.desc.v1"],
+      "match": {"family": "Carved", "fork": "Zouna"},
+      "rootSignature": {
+        "byStages": [
+          {"any": ["CS"], "desc": {"flags": 0, "rows": [
+                [0, 0, 0, 64, 0, 0, 5, 4294967295], [0, 0, 2, 14, 0, 0, 5, 4294967295], [0, 0, 3, 16, 0, 0, 1, 4294967295],
+                [0, 0, 1, 8, 0, 0, 3, 4294967295],
+                [0, 0, 0, 256, 0, 42, 5, 4294967295], [0, 0, 0, 256, 0, 43, 5, 4294967295], [0, 0, 0, 256, 0, 44, 5, 4294967295]
+              ]}},
+          {"desc": {"flags": 1, "rows": [
+                [0, 5, 0, 64, 0, 0, 5, 4294967295], [0, 5, 2, 14, 0, 0, 5, 4294967295], [0, 5, 3, 16, 0, 0, 1, 4294967295],
+                [0, 1, 0, 64, 0, 0, 5, 4294967295], [0, 1, 2, 14, 0, 0, 5, 4294967295], [0, 1, 3, 16, 0, 0, 1, 4294967295],
+                [0, 4, 0, 64, 0, 0, 5, 4294967295], [0, 4, 2, 14, 0, 0, 5, 4294967295], [0, 4, 3, 16, 0, 0, 1, 4294967295],
+                [0, 2, 0, 64, 0, 0, 5, 4294967295], [0, 2, 2, 14, 0, 0, 5, 4294967295], [0, 2, 3, 16, 0, 0, 1, 4294967295],
+                [0, 3, 0, 64, 0, 0, 5, 4294967295], [0, 3, 2, 14, 0, 0, 5, 4294967295], [0, 3, 3, 16, 0, 0, 1, 4294967295],
+                [0, 0, 1, 8, 0, 0, 3, 4294967295],
+                [0, 0, 0, 256, 0, 42, 5, 4294967295], [0, 0, 0, 256, 0, 43, 5, 4294967295], [0, 0, 0, 256, 0, 44, 5, 4294967295]
+              ]}}
+        ]
+      }
+    },
+    {
+      "id": "snowdrop-helix",
+      "requires": ["rs.select.v1", "stagesets.v1"],
+      "match": {"family": "Snowdrop", "fork": "helix"},
+      "rootSignature": {"select": ["snowdrop"]},
+      "stageSets": [["VS"], ["VS", "PS"], ["CS"]]
+    },
+    {
       "id": "re-pragmata",
       "requires": ["rs.re.v1", "rs.samplers.v1"],
       "match": {"family": "RE Engine", "fork": "PRAGMATA"},
@@ -387,6 +455,82 @@
           "denyMesh": false, "cbvUavAbove": true, "bindlessSpaces": 8}
       },
       "verified": true
+    },
+    {
+      "id": "re-re9demo",
+      "requires": ["rs.re.v1", "rs.re.v2", "rs.re.v3", "rs.samplers.v1"],
+      "match": {"family": "RE Engine", "fork": "re9demo"},
+      "rootSignature": {
+        "re": {"cbvBase": 4, "cbvSizes": [3, 10], "srvSizes": [2, 4, 8, 16, 32, 64, 128], "uavSizes": [16], "computeUavs": 64, "heapIndexed": true, "cbvUavAbove": true,
+          "otherCbvBase": 0},
+        "samplers": [
+          [0, 1, 1, 1, 0, 1, 1, 0, 0, 2139095039, 0, 32, 0],
+          [0, 3, 3, 3, 0, 1, 1, 0, 0, 2139095039, 1, 32, 0],
+          [0, 4, 4, 4, 0, 1, 1, 0, 0, 2139095039, 2, 32, 0],
+          [0, 2, 2, 2, 0, 1, 1, 0, 0, 2139095039, 3, 32, 0],
+          [20, 1, 1, 1, 0, 1, 1, 0, 0, 2139095039, 4, 32, 0],
+          [20, 3, 3, 3, 0, 1, 1, 0, 0, 2139095039, 5, 32, 0],
+          [20, 4, 4, 4, 0, 1, 1, 0, 0, 2139095039, 6, 32, 0],
+          [20, 2, 2, 2, 0, 1, 1, 0, 0, 2139095039, 7, 32, 0],
+          [21, 1, 1, 1, 0, 1, 1, 0, 0, 2139095039, 8, 32, 0],
+          [21, 3, 3, 3, 0, 1, 1, 0, 0, 2139095039, 9, 32, 0],
+          [21, 4, 4, 4, 0, 1, 1, 0, 0, 2139095039, 10, 32, 0],
+          [21, 2, 2, 2, 0, 1, 1, 0, 0, 2139095039, 11, 32, 0],
+          [148, 3, 3, 3, 0, 1, 2, 0, 0, 2139095039, 12, 32, 0],
+          [0, 3, 3, 3, 0, 1, 2, 0, 0, 2139095039, 13, 32, 0]
+        ]
+      },
+      "verified": true
+    },
+    {
+      "id": "re-dd2ccs",
+      "requires": ["rs.re.v1", "rs.re.v2", "rs.re.v3", "rs.samplers.v1"],
+      "match": {"family": "RE Engine", "fork": "DD2CCS"},
+      "rootSignature": {
+        "re": {"cbvBase": 4, "cbvSizes": [3, 10], "srvSizes": [2, 4, 8, 16, 32, 64, 128], "uavSizes": [16], "computeUavs": 64, "heapIndexed": true, "cbvUavAbove": true,
+          "otherCbvBase": 0},
+        "samplers": [
+          [0, 1, 1, 1, 0, 1, 1, 0, 0, 2139095039, 0, 32, 0],
+          [0, 3, 3, 3, 0, 1, 1, 0, 0, 2139095039, 1, 32, 0],
+          [0, 4, 4, 4, 0, 1, 1, 0, 0, 2139095039, 2, 32, 0],
+          [0, 2, 2, 2, 0, 1, 1, 0, 0, 2139095039, 3, 32, 0],
+          [20, 1, 1, 1, 0, 1, 1, 0, 0, 2139095039, 4, 32, 0],
+          [20, 3, 3, 3, 0, 1, 1, 0, 0, 2139095039, 5, 32, 0],
+          [20, 4, 4, 4, 0, 1, 1, 0, 0, 2139095039, 6, 32, 0],
+          [20, 2, 2, 2, 0, 1, 1, 0, 0, 2139095039, 7, 32, 0],
+          [21, 1, 1, 1, 0, 1, 1, 0, 0, 2139095039, 8, 32, 0],
+          [21, 3, 3, 3, 0, 1, 1, 0, 0, 2139095039, 9, 32, 0],
+          [21, 4, 4, 4, 0, 1, 1, 0, 0, 2139095039, 10, 32, 0],
+          [21, 2, 2, 2, 0, 1, 1, 0, 0, 2139095039, 11, 32, 0],
+          [148, 3, 3, 3, 0, 1, 2, 0, 0, 2139095039, 12, 32, 0],
+          [0, 3, 3, 3, 0, 1, 2, 0, 0, 2139095039, 13, 32, 0]
+        ]
+      }
+    },
+    {
+      "id": "re-re4demo",
+      "requires": ["rs.re.v1", "rs.re.v2", "rs.re.v3", "rs.samplers.v1"],
+      "match": {"family": "RE Engine", "fork": "re4demo"},
+      "rootSignature": {
+        "re": {"cbvBase": 4, "cbvSizes": [3, 10], "srvSizes": [2, 4, 8, 16, 32, 64, 128], "uavSizes": [2, 4, 8, 16], "computeUavs": 8, "heapIndexed": true, "cbvUavAbove": true,
+          "otherCbvBase": 0},
+        "samplers": [
+          [0, 1, 1, 1, 0, 1, 1, 0, 0, 2139095039, 0, 32, 0],
+          [0, 3, 3, 3, 0, 1, 1, 0, 0, 2139095039, 1, 32, 0],
+          [0, 4, 4, 4, 0, 1, 1, 0, 0, 2139095039, 2, 32, 0],
+          [0, 2, 2, 2, 0, 1, 1, 0, 0, 2139095039, 3, 32, 0],
+          [20, 1, 1, 1, 0, 1, 1, 0, 0, 2139095039, 4, 32, 0],
+          [20, 3, 3, 3, 0, 1, 1, 0, 0, 2139095039, 5, 32, 0],
+          [20, 4, 4, 4, 0, 1, 1, 0, 0, 2139095039, 6, 32, 0],
+          [20, 2, 2, 2, 0, 1, 1, 0, 0, 2139095039, 7, 32, 0],
+          [21, 1, 1, 1, 0, 1, 1, 0, 0, 2139095039, 8, 32, 0],
+          [21, 3, 3, 3, 0, 1, 1, 0, 0, 2139095039, 9, 32, 0],
+          [21, 4, 4, 4, 0, 1, 1, 0, 0, 2139095039, 10, 32, 0],
+          [21, 2, 2, 2, 0, 1, 1, 0, 0, 2139095039, 11, 32, 0],
+          [148, 3, 3, 3, 0, 1, 2, 0, 0, 2139095039, 12, 32, 0],
+          [0, 3, 3, 3, 0, 1, 2, 0, 0, 2139095039, 13, 32, 0]
+        ]
+      }
     },
     {
       "id": "nixxes-got",
@@ -764,10 +908,41 @@
       }
     },
     {
+      "id": "blackspace-vi",
+      "requires": ["vi.v1"],
+      "match": {"family": "BlackSpace"},
+      "viewInstancing": {
+        "note": "Crimson Desert: every recorded PSO with an SV_ViewID shader (297, in these 7 passes) has 2 views, render target array slices 0 and 1",
+        "views": [[0, 0], [0, 1]],
+        "libraries": ["scenedynamicshadowbindless", "effectdynamicshadowtranslucentbindless", "scenecharactershadowbindless", "sceneeffectshadowbindless",
+          "charactershadowtranslucent", "dynamicobjectcapturewide", "scenedynamicshadowtranslucentbindless"]
+      }
+    },
+    {
+      "id": "blackspace-passes",
+      "requires": ["passnames.v1"],
+      "match": {"family": "BlackSpace"},
+      "passNames": {
+        "06570694": "CopyBackSceneDepth", "15ea2d27": "SkyMaterial", "169232a9": "SceneGeometryWireframeRenderPass",
+        "1c75290b": "TerrainRegionCapture", "2e53103e": "ScreenSpaceAutomaticPlacement", "4a7a1d6e": "DirectML",
+        "5200be8f": "GPUSorting", "543ed2b4": "HydraulicErosion", "5c9fbee9": "UISplineRender",
+        "7ff42eab": "RainDropletRenderPass", "86a28943": "CopySceneDepthToSSDMDepth", "9cee1d0a": "Panorama",
+        "9f3321a2": "SkyMaterialEnvironment", "a5ee5f72": "StaticShadowImpostorGroup", "b2d270b6": "TestRenderPassForProfiling",
+        "bad96668": "GeneratePropagationMask", "c14259a4": "CopySceneColorMS", "c25672fe": "MassPlacementCaptureUV",
+        "dde4f984": "CopyStencilSSDM", "fcbba8fb": "ProcessForColorBlind"
+      }
+    },
+    {
       "id": "amd-ags",
       "requires": ["amd.ags.v1"],
       "match": {"family": "Any"},
-      "ags": {"profiles": {"Phoenix": "d32786a7", "OakGame": "f2f80824", "Griffin": "38810766", "GoWR": "b7653b10"}, "proven": ["Townfall", "Griffin"]}
+      "ags": {"profiles": {"Phoenix": "d32786a7", "OakGame": "f2f80824", "Griffin": "38810766", "Split": "eed2a692", "GoWR": "b7653b10"}, "proven": ["Townfall", "Griffin"]}
+    },
+    {
+      "id": "amd-ags-registrations",
+      "requires": ["amd.ags.v2"],
+      "match": {"family": "Any"},
+      "ags": {"registrations": {"steam:2947440": {"engine": "SCSKiller"}}}
     },
     {
       "id": "nv-aftermath",
@@ -777,7 +952,8 @@
         "steam:1941540": {"version": 535, "features": 10, "apis": 3, "dumpFlags": 1},
         "xbox:Microsoft.Avowed_8wekyb3d8bbwe": {"version": 536, "features": 8, "apis": 3, "dumpFlags": 1},
         "xbox:Microsoft.Fairlightbasegame_8wekyb3d8bbwe": {"version": 539, "features": 8, "apis": 3, "dumpFlags": 1},
-        "steam:3010850": {"version": 539, "features": 8, "apis": 3, "dumpFlags": 1}
+        "steam:3010850": {"version": 539, "features": 8, "apis": 3, "dumpFlags": 1},
+        "steam:4078430": {"version": 535, "features": 10, "apis": 3, "dumpFlags": 1}
       }
     }
   ]

@@ -6,10 +6,10 @@ namespace SCSKiller.Core.App;
 /// <summary>An item of news.json. Targeting, all optional and checked on the PC: <paramref name="Channels"/> the running
 /// build's channel, <paramref name="Ent"/> any of the account's entitlement flags ("none": an account with none, or signed
 /// out), <paramref name="MinVersion"/>..<paramref name="MaxVersion"/> the app version (inclusive), <paramref name="Gpu"/>
-/// the GPU vendor ("nvidia", "amd", "intel"), <paramref name="Game"/> a game id the Library has (also its "Go to game"
-/// button). Dates are yyyy-MM-dd; an item is hidden from its <paramref name="Expires"/> day on.</summary>
+/// the GPU vendor ("nvidia", "amd", "intel"), <paramref name="Os"/> the OS ("windows", "linux", "macos"), <paramref name="Game"/>
+/// a game id the Library has (also its "Go to game" button). Dates are yyyy-MM-dd; an item is hidden from its <paramref name="Expires"/> day on.</summary>
 public sealed record NewsItem(string Id, string Date, string Title, string Body, string? Link = null, string? Game = null, string? Expires = null,
-    string[]? Channels = null, string[]? Ent = null, string? MinVersion = null, string? MaxVersion = null, string[]? Gpu = null);
+    string[]? Channels = null, string[]? Ent = null, string? MinVersion = null, string? MaxVersion = null, string[]? Gpu = null, string[]? Os = null);
 
 /// <summary>What an item is shown against.</summary>
 public sealed record NewsTarget(AppVersion Version, IReadOnlyCollection<string> Ent, GpuVendor Gpu, Func<string, bool> HasGame);
@@ -47,7 +47,7 @@ public sealed class News
         && ContentFile.Text(i.Title, 100) && ContentFile.Text(i.Body, 500)
         && (i.Link == null || IsAllowedLink(i.Link)) && (i.Game == null || ContentFile.Text(i.Game, 200))
         && (i.MinVersion == null || AppVersion.Parse(i.MinVersion) != null) && (i.MaxVersion == null || AppVersion.Parse(i.MaxVersion) != null)
-        && List(i.Channels) && List(i.Ent) && List(i.Gpu);
+        && List(i.Channels) && List(i.Ent) && List(i.Gpu) && List(i.Os);
 
     static bool List(string[]? values) => values == null || values.Length > 0 && values.All(v => ContentFile.Text(v, 32));
 
@@ -75,6 +75,7 @@ public sealed class News
         && (i.MinVersion == null || t.Version.CompareTo(AppVersion.Parse(i.MinVersion)) >= 0)
         && (i.MaxVersion == null || t.Version.CompareTo(AppVersion.Parse(i.MaxVersion)) <= 0)
         && (i.Gpu == null || i.Gpu.Contains(t.Gpu.ToString().ToLowerInvariant()))
+        && (i.Os == null || i.Os.Contains(OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsMacOS() ? "macos" : "linux"))
         && (i.Game == null || t.HasGame(i.Game));
 
     /// <summary>The newest kept news among stable's and those of <paramref name="channels"/> (<see cref="Channels"/>; null: not
@@ -98,12 +99,16 @@ public sealed class News
         trust.FetchAsync(Name, TryParse, cacheFile, channels, token, routes, budget);
 }
 
-/// <summary>news-seen.json, local only: the X.Y.Z whose What's new was shown, the news items read and dismissed.</summary>
-public sealed record NewsSeen(string? WhatsNew = null, string[]? Read = null, string[]? Dismissed = null);
+/// <summary>news-seen.json, local only: the X.Y.Z whose What's new was shown, the news items read and dismissed, and those
+/// already shown as a notification (null: none yet, so the backlog isn't).</summary>
+public sealed record NewsSeen(string? WhatsNew = null, string[]? Read = null, string[]? Dismissed = null, string[]? Toasted = null);
 
 public static class NewsState
 {
     const int Keep = 200;
+
+    /// <summary>The --screenshots notifications' item: news.json may have none.</summary>
+    public static NewsItem Sample { get; } = new("sample", "2026-10-22", "News from SCSKiller", "The first line of a news item shows here");
 
     /// <summary>The items not dismissed, and the ids of those unread.</summary>
     public static (IReadOnlyList<NewsItem> Shown, IReadOnlySet<string> Unread) Of(AppStore store, IEnumerable<NewsItem> items)
@@ -119,6 +124,29 @@ public static class NewsState
 
     public static void Dismiss(AppStore store, string id, IReadOnlyCollection<string> feed) =>
         Update(store, s => s with { Dismissed = Add(s.Dismissed, [id], feed), Read = Add(s.Read, [id], feed) });
+
+    const int MaxToasts = 3, BacklogDays = 14;
+
+    /// <summary>The notifications now due for <paramref name="shown"/> (<see cref="Of"/>), newest first, marked as shown in the
+    /// same update: each item once ever. The first time, the unread ones older than <see cref="BacklogDays"/> days are marked
+    /// without showing. At most <see cref="MaxToasts"/> items, <c>More</c> counts the rest, which one line covers.</summary>
+    public static (IReadOnlyList<NewsItem> Show, int More) ToastDue(AppStore store, IEnumerable<NewsItem> shown, IReadOnlyCollection<string> feed, DateOnly today)
+    {
+        lock (Lock)
+        {
+            var seen = store.LoadNewsSeen();
+            var due = shown.Where(i => seen.Read?.Contains(i.Id) != true && seen.Toasted?.Contains(i.Id) != true).ToList();
+            var old = seen.Toasted == null ? due.Where(i => News.Day(i.Date) < today.AddDays(-BacklogDays)).ToList() : [];
+            var fresh = due.Except(old).ToList();
+            if (due.Count > 0) store.SaveNewsSeen(seen with { Toasted = Add(seen.Toasted, due.Select(i => i.Id), feed) });
+            return (fresh.Take(MaxToasts).ToList(), Math.Max(0, fresh.Count - MaxToasts));
+        }
+    }
+
+    /// <summary>A notification's second line: the body up to its first newline.</summary>
+    public static string FirstLine(string body) => body.Split('\n', 2)[0].Trim();
+
+    public static string MoreLine(int n) => $"{n} more news item{(n == 1 ? "" : "s")} in SCSKiller";
 
     static readonly object Lock = new();
 

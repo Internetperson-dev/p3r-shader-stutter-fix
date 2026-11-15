@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -132,13 +133,25 @@ public static partial class PsoDb
         return f;
     }
 
-    /// <summary>Copies a recording as a proxy db, which is what the proxy reads.</summary>
+    /// <summary>A recording as a proxy db, which is what the proxy reads: a raw one a hard link where the volume allows, so
+    /// <paramref name="to"/> is only ever replaced (a temp file and a rename), never written in place.</summary>
     public static void CopyRaw(string from, string to)
     {
-        if (!IsCompact(from)) { File.Copy(from, to, true); return; }
+        if (!IsCompact(from))
+        {
+            File.Delete(to);   // an earlier link to from: a copy over it would write the source
+            if (!(OperatingSystem.IsWindows() ? CreateHardLinkW(to, from, 0) : link(from, to) == 0)) File.Copy(from, to);
+            return;
+        }
         using var f = new BufferedStream(File.Create(to), 1 << 20);
         foreach (var r in Read(from)) Write(f, r.Tag, r.Payload);
     }
+
+    [DllImport("kernel32", CharSet = CharSet.Unicode)]
+    static extern bool CreateHardLinkW(string newName, string existing, nint security);
+
+    [DllImport("libc")]
+    static extern int link([MarshalAs(UnmanagedType.LPUTF8Str)] string from, [MarshalAs(UnmanagedType.LPUTF8Str)] string to);
 
     public static IEnumerable<Rec> Read(Stream f)
     {
@@ -170,6 +183,8 @@ public static partial class PsoDb
 
     public static void Write(Stream s, char tag, ReadOnlySpan<byte> payload)
     {
+        if (tag == 'B' && s is GenRam ram && ram.Add(tag, [], payload)) return;
+        if (s is TopUp.RecordsOnly only) { only.Add(tag, payload); return; }
         Span<byte> head = stackalloc byte[5];
         head[0] = (byte)tag;
         BinaryPrimitives.WriteUInt32LittleEndian(head[1..], (uint)payload.Length);
@@ -179,6 +194,8 @@ public static partial class PsoDb
 
     public static void WriteBlob(Stream s, string sha1, ReadOnlySpan<byte> bytes)
     {
+        if (s is GenRam ram && ram.Add('B', Convert.FromHexString(sha1), bytes)) return;
+        if (s is TopUp.RecordsOnly only) { only.Top.See(sha1, bytes); return; }
         Span<byte> head = stackalloc byte[25];
         head[0] = (byte)'B';
         BinaryPrimitives.WriteUInt32LittleEndian(head[1..], (uint)(20 + bytes.Length));
@@ -515,9 +532,10 @@ public static partial class PsoDb
     /// IndependentBlendEnable is off; a logic op is -1 when LogicOpEnable is off. Mesh pipelines: empty layout, topology 0.
     /// <paramref name="Blend"/>: the canonical D3D12_BLEND_DESC (328 bytes; null: none in the record, D3D12's default);
     /// <paramref name="DepthStencil"/>: the depth-stencil desc as a canonical D3D12_DEPTH_STENCIL_DESC1 (56 bytes; null: none,
-    /// or a DEPTH_STENCIL2). Both are what a synthesized PSO copies to match the game's pipeline state.</summary>
+    /// or a DEPTH_STENCIL2). Both are what a synthesized PSO copies to match the game's pipeline state. <paramref name="ViewInstancing"/>:
+    /// the view instancing subobject's body (<see cref="ViewInstancingBytes"/>); null: none, or no views.</summary>
     public sealed record PsoState(string Rs, SortedDictionary<int, string> Stages, List<LayoutElem> Layout, uint Topology, uint[] RtFormats,
-        byte[] RtWriteMasks, int[] LogicOps, uint Dsv, uint SampleCount, byte[]? Blend = null, byte[]? DepthStencil = null)
+        byte[] RtWriteMasks, int[] LogicOps, uint Dsv, uint SampleCount, byte[]? Blend = null, byte[]? DepthStencil = null, byte[]? ViewInstancing = null)
     {
         public string Tuple => PsoDb.Tuple(Rs, Stages);
         /// <summary>Render target 0 blends with the pixel shader's second output (a SRC1_* factor): dual-source blending.</summary>
@@ -545,7 +563,7 @@ public static partial class PsoDb
         uint topo = 0, dsv = 0, samples = 1;
         uint[] rt = [];
         var blendAt = -1;
-        byte[]? depth = null;
+        byte[]? depth = null, views = null;
         if (r.Tag == 'G')
         {
             blendAt = 120;
@@ -559,7 +577,7 @@ public static partial class PsoDb
         }
         else
         {
-            foreach (var (t, pos, _) in Subobjects(p))
+            foreach (var (t, pos, next) in Subobjects(p))
                 if (t == 12) layout = ReadLayout(p, pos);
                 else if (t == 8) blendAt = pos;
                 else if (t == 14) topo = U(p, pos);
@@ -568,6 +586,7 @@ public static partial class PsoDb
                 else if (t == 21) depth = p.AsSpan(pos, DepthStencilDesc1Size).ToArray();
                 else if (t == 11) depth = [.. p.AsSpan(pos, 52), 0, 0, 0, 0];
                 else if (t == 17) samples = U(p, pos);
+                else if (t == 22 && U(p, pos) > 0) views = p[pos..next];
         }
         var masks = new byte[rt.Length];
         var ops = new int[rt.Length];
@@ -578,7 +597,7 @@ public static partial class PsoDb
             masks[i] = p[b + 36];
             ops[i] = U(p, b + 4) != 0 ? (int)U(p, b + 32) : -1;
         }
-        return new PsoState(pso.Rs, pso.Stages, layout, topo, rt, masks, ops, dsv, samples, blendAt < 0 ? null : p.AsSpan(blendAt, BlendDescSize).ToArray(), depth);
+        return new PsoState(pso.Rs, pso.Stages, layout, topo, rt, masks, ops, dsv, samples, blendAt < 0 ? null : p.AsSpan(blendAt, BlendDescSize).ToArray(), depth, views);
 
         static uint[] RtFormats(byte[] p, int o) => Enumerable.Range(0, (int)Math.Min(8, U(p, o))).Select(i => U(p, o + 4 + 4 * i)).ToArray();
     }
@@ -655,9 +674,10 @@ public static partial class PsoDb
     /// differ across targets turn IndependentBlendEnable on, which nothing keys on. <paramref name="logicOp"/>: a D3D12_LOGIC_OP
     /// for every target (AMD keys the PS on it; D3D12 takes it only without independent blend), -1 = LogicOpEnable off.
     /// <paramref name="blend"/> / <paramref name="depthStencil"/>: a recorded canonical blend desc / DEPTH_STENCIL_DESC1 to use
-    /// as they are instead (masks and logic op are then the blend desc's own).</summary>
+    /// as they are instead (masks and logic op are then the blend desc's own). <paramref name="viewInstancing"/>: a view
+    /// instancing subobject's body (<see cref="ViewInstancingBytes"/>), last; null: none.</summary>
     public static byte[] Stream(string rs, IReadOnlyDictionary<int, string> stages, IReadOnlyList<LayoutElem>? layout, uint topology, uint[] rtFormats, uint dsv,
-        byte[]? rtWriteMasks = null, int logicOp = -1, byte[]? blend = null, byte[]? depthStencil = null)
+        byte[]? rtWriteMasks = null, int logicOp = -1, byte[]? blend = null, byte[]? depthStencil = null, byte[]? viewInstancing = null)
     {
         if (blend is { Length: not BlendDescSize } || depthStencil is { Length: not DepthStencilDesc1Size }) throw new ArgumentException("not a canonical blend / depth-stencil desc");
         byte Mask(int i) => rtWriteMasks != null && i < rtWriteMasks.Length ? rtWriteMasks[i] : (byte)0xF;
@@ -704,10 +724,20 @@ public static partial class PsoDb
             for (var i = 0; i < 8; i++) w.U32(i < rtFormats.Length ? rtFormats[i] : 0);
             Sub(17).U32(1).U32(0);
             Sub(9).U32(uint.MaxValue);
+            if (viewInstancing != null) Sub(22).Bytes(viewInstancing);
         }
         var bytes = w.ToArray();
         BinaryPrimitives.WriteUInt32LittleEndian(bytes, count);
         return bytes;
+    }
+
+    /// <summary>A D3D12_VIEW_INSTANCING_DESC as the proxy records it: u32 ViewInstanceCount, per view (u32 ViewportArrayIndex,
+    /// u32 RenderTargetArrayIndex), u32 Flags.</summary>
+    public static byte[] ViewInstancingBytes(IReadOnlyList<(uint Viewport, uint RenderTarget)> views, uint flags)
+    {
+        var w = new ArrayBufferWriter().U32((uint)views.Count);
+        foreach (var (v, rt) in views) w.U32(v).U32(rt);
+        return w.U32(flags).ToArray();
     }
 
     sealed class ArrayBufferWriter

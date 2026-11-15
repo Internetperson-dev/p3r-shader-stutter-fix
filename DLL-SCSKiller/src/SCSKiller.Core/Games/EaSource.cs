@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
@@ -14,19 +15,23 @@ namespace SCSKiller.Core.Games;
 /// location changed, EA games bought on Steam). Installed = the xml under its own name (while downloading every file is
 /// still "*_DiP_Staged") and the launcher's registry value, which the installer's touchup step writes after the download,
 /// naming this folder. The exe goes through FindExe like Epic's, so an Unreal game gets its Binaries\Win64 exe.</summary>
-public sealed class EaSource(IEnumerable<string>? installDirs = null, Func<string, string?>? registry = null) : IGameSource
+public sealed class EaSource(IEnumerable<string>? installDirs = null, Func<string, string?>? registry = null) : IGameSource, ILeavesOut
 {
     public Store Store => Store.EA;
+
+    public Func<string, bool> LeftOut { get; set; } = _ => false;
 
     public IReadOnlyList<Game> Discover()
     {
         var games = new List<Game>();
-        foreach (var dir in (installDirs ?? InstallDirs()).Select(GameFiles.DirKey).Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var dir in (installDirs ?? (OperatingSystem.IsWindows() ? InstallDirs(LeftOut) : [])).Select(GameFiles.DirKey).Distinct(StringComparer.OrdinalIgnoreCase))
         {
+            if (LeftOut(dir)) continue;
             var xml = Path.Combine(dir, "__Installer", "installerdata.xml");
             if (!File.Exists(xml)) continue;
             try { if (Parse(dir, XDocument.Load(xml)) is { } g) games.Add(g); }
             catch (Exception e) when (e is XmlException or IOException or UnauthorizedAccessException) { }   // destaged under us
+            catch (Exception e) when (e is not OperationCanceledException) { GameFiles.Skip("EA app", dir, e); }
         }
         return games;
     }
@@ -46,10 +51,11 @@ public sealed class EaSource(IEnumerable<string>? installDirs = null, Func<strin
             (string?)x.Descendants("gameVersion").FirstOrDefault()?.Attribute("version"));
     }
 
-    string? Read(string path) => (registry ?? ReadRegistry)(path);
+    string? Read(string path) => registry != null ? registry(path) : OperatingSystem.IsWindows() ? ReadRegistry(path) : null;
 
     /// <summary>"HKEY_LOCAL_MACHINE\Key\Value Name" from the 64-bit view, else the 32-bit one (the installer may be 32-bit
     /// and land under WOW6432Node).</summary>
+    [SupportedOSPlatform("windows")]
     public static string? ReadRegistry(string path)
     {
         var parts = path.Split('\\', 2);
@@ -72,7 +78,8 @@ public sealed class EaSource(IEnumerable<string>? installDirs = null, Func<strin
 
     /// <summary>Folders that may hold an EA install: every subfolder of the EA app's install locations, and every
     /// uninstall entry's InstallLocation (Discover keeps those with an installerdata.xml).</summary>
-    public static IEnumerable<string> InstallDirs()
+    [SupportedOSPlatform("windows")]
+    public static IEnumerable<string> InstallDirs(Func<string, bool>? leftOut = null)
     {
         var dirs = new List<string>();
         var settings = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Electronic Arts", "EA Desktop");
@@ -85,17 +92,19 @@ public sealed class EaSource(IEnumerable<string>? installDirs = null, Func<strin
                         .Select(l => l[(l.IndexOf('=') + 1)..].Trim()));
         }
         catch (IOException) { }   // the EA app rewriting its settings
-        foreach (var lib in libraries.Where(l => l.Length > 0 && Directory.Exists(l)))
+        foreach (var lib in libraries.Where(l => l.Length > 0 && leftOut?.Invoke(l) != true && Directory.Exists(l)))
             dirs.AddRange(Directory.EnumerateDirectories(lib));
         foreach (var view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
         {
             using var b = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view);
             using var root = b.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall");
             foreach (var sub in root?.GetSubKeyNames() ?? [])
-            {
-                using var key = root!.OpenSubKey(sub);
-                if (key?.GetValue("InstallLocation") is string { Length: > 0 } at && Directory.Exists(at)) dirs.Add(at);
-            }
+                try
+                {
+                    using var key = root!.OpenSubKey(sub);
+                    if (key?.GetValue("InstallLocation") is string { Length: > 0 } at && Directory.Exists(at)) dirs.Add(at);
+                }
+                catch (Exception e) when (e is not OperationCanceledException) { GameFiles.Skip("EA app", sub, e); }
         }
         return dirs;
     }

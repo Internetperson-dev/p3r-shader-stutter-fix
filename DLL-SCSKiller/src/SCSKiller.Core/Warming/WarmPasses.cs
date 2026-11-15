@@ -113,8 +113,8 @@ public sealed class WarmPasses
             foreach (var (tag, payload) in Records(Path.Combine(workDir, db)))
                 switch (tag)
                 {
-                    case 'B' or 'N' or 'W': break;
-                    case '1' or '2': items11++; break;
+                    case 'B' or 'N' or 'W' or 'D': break;
+                    case '1' or '2' or '3': items11++; break;
                     case 'P': plans.Add(payload!); break;
                     default:
                         if (keys.TryAdd(Key(tag, payload!), recs.Count)) recs.Add((tag, payload!));
@@ -137,27 +137,6 @@ public sealed class WarmPasses
         }
         for (long i = 0; i < items11; i++) sets.Add(null);
         return (sets, recorded);
-    }
-
-    /// <summary>The item numbers (scskiller_warm's, in the proxy's order) of those of <paramref name="keys"/> the work
-    /// folder's D3D12 items have.</summary>
-    public static Dictionary<string, long> ItemsOf(string workDir, IReadOnlyCollection<string> keys)
-    {
-        var want = new HashSet<string>(keys, StringComparer.OrdinalIgnoreCase);
-        var recs = new HashSet<string>(StringComparer.Ordinal);
-        var found = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
-        var plans = new List<(string Key, long At)>();
-        long planned = 0;
-        foreach (var db in new[] { "scskiller.db", "scskiller_gen.db" })
-            foreach (var (tag, payload) in Records(Path.Combine(workDir, db)))
-            {
-                if (tag is 'B' or 'N' or 'W' or 'D' or '1' or '2' or '3') continue;
-                var key = Key(tag, payload!);
-                if (tag == 'P') { if (want.Contains(key)) plans.Add((key, planned)); planned++; }
-                else if (recs.Add(key) && want.Contains(key)) found.TryAdd(key, recs.Count - 1);
-            }
-        foreach (var (key, at) in plans) found.TryAdd(key, recs.Count + at);
-        return found;
     }
 
     /// <summary>The record keys of <paramref name="items"/> (scskiller_warm's item numbers) that are D3D12 items of the work

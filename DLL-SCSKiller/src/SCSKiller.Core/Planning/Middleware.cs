@@ -2,6 +2,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Win32;
 using SCSKiller.Core.Carved;
 using SCSKiller.Core.Games;
 using static SCSKiller.Core.Planning.PsoDb;
@@ -99,15 +100,23 @@ public static class Middleware
         return [.. tags.OrderBy(t => t.Pipelines > 0 ? 0 : 1)];
     }
 
-    /// <summary>The known middleware DLLs in the game exe's folder (not below it); none for anti-cheat games.</summary>
-    public static List<MiddlewareDll> Detect(Game game) =>
-        GameFiles.DetectAntiCheat(game) != AntiCheat.None || Path.GetDirectoryName(game.ExePath) is not { } dir ? [] : Detect(dir);
+    /// <summary>The known middleware DLLs in the game exe's folder (not below it); none for anti-cheat games.
+    /// <paramref name="unfinished"/>: told why when the anti-cheat check couldn't finish (a read error, its time budget),
+    /// which lists none either.</summary>
+    public static List<MiddlewareDll> Detect(Game game, Action<string>? unfinished = null)
+    {
+        string? why = null;
+        var antiCheat = GameFiles.DetectAntiCheat(game, late: () => why = "the anti-cheat check of its folder ran out of time",
+            unreadable: e => why = $"the anti-cheat check of its folder couldn't read it: {e.Message}");
+        if (why != null) unfinished?.Invoke(why);
+        return antiCheat != AntiCheat.None || Path.GetDirectoryName(game.ExePath) is not { } dir ? [] : Detect(dir);
+    }
 
     public static List<MiddlewareDll> Detect(string exeDir)
     {
         var found = new List<MiddlewareDll>();
         if (!Directory.Exists(exeDir)) return found;
-        foreach (var path in Directory.EnumerateFiles(exeDir, "*", new EnumerationOptions { IgnoreInaccessible = true, AttributesToSkip = 0 }).Order(StringComparer.OrdinalIgnoreCase))
+        foreach (var path in GameFiles.EnumerateFiles(exeDir, "*", new EnumerationOptions { IgnoreInaccessible = true, AttributesToSkip = 0 }).Order(StringComparer.OrdinalIgnoreCase))
         {
             var file = Path.GetFileName(path);
             if (!file.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) && !file.EndsWith(".asi", StringComparison.OrdinalIgnoreCase)) continue;
@@ -221,19 +230,76 @@ public static class Middleware
 
     /// <summary>The containers among <paramref name="sha1s"/> that the packable middleware DLLs next to the game's exe hold
     /// (read-only, each verified by SHA-1; none for anti-cheat games): <see cref="Rehydrate.Run"/>'s extra blob source, as
-    /// a hash-only recording's middleware PSOs (FSR4's compute shaders...) aren't in the game's index. A DLL is scanned
-    /// only when there's something to look for.</summary>
+    /// a hash-only recording's middleware PSOs (FSR4's compute shaders...) aren't in the game's index. Then the D3D12
+    /// runtime's D3D12Core.dll, the game's Agility SDK copy before the system's, for anti-cheat games too: most D3D12
+    /// games' first PSOs use its shaders, which an upload flags 'L'. Then the Steam and EOS overlays (<see cref="OverlayDlls"/>),
+    /// whose PSOs on the game's device an upload flags 'L' too. A DLL is scanned only when there's something to look for.</summary>
     public static IEnumerable<(string Sha1, byte[] Bytes)> Blobs(Game game, IReadOnlySet<string> sha1s)
     {
         if (sha1s.Count == 0) yield break;
         var left = sha1s.ToHashSet();
-        foreach (var d in Detect(game).Where(d => d.Packable))
+        foreach (var path in Detect(game).Where(d => d.Packable).Select(d => d.Path).Concat(Runtimes(game)).Concat(OverlayDlls()))
         {
             if (left.Count == 0) yield break;
-            if (TryScan(d.Path) is not { } image) continue;
+            if (TryScan(path) is not { } image) continue;
             foreach (var h in left.Where(image.Containers.ContainsKey).ToList())
-                if (image.Read(h) is { } b) { left.Remove(h); yield return (h, b); }
+            {
+                byte[]? b;
+                try { b = image.Read(h); }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { break; }   // removed or locked since its scan: the next DLL
+                if (b != null) { left.Remove(h); yield return (h, b); }
+            }
         }
+    }
+
+    /// <summary>The D3D12 runtime's two PSOs, the first creates of most D3D12 games and the same bytes in each, with their root signature,
+    /// and their shaders read from <see cref="Blobs"/>. False when this PC's runtime doesn't hold those shaders. Measured on NVIDIA: a warm
+    /// without them at its start leaves the game's first launch as cold as no warm (REANIMAL, Hogwarts Legacy).</summary>
+    public static bool WriteRuntimeFirst(Game game, string output)
+    {
+        var shaders = Blobs(game, new HashSet<string> { "dd931d021b70164fbe0901346a26cdcdf98c886b", "bdc339dddad1047efa6cd44d1a741f143c90b338" }).ToList();
+        if (shaders.Count != 2) return false;
+        var rootSig = Convert.FromBase64String("RFhCQyLDhBP9c+MDJCwxOa8fPooBAAAARAAAAAEAAAAkAAAAUlRTMBgAAAADAAAAAAAAABgAAAAAAAAAGAAAAAAAAAA=");
+        using var f = new BufferedStream(File.Create(output));
+        PsoDb.Write(f, 'B', [.. System.Security.Cryptography.SHA1.HashData(rootSig), .. rootSig]);
+        foreach (var (sha1, bytes) in shaders) PsoDb.Write(f, 'B', [.. Convert.FromHexString(sha1), .. bytes]);
+        PsoDb.Write(f, 'G', Convert.FromBase64String("y60ZMXSv4HzU6C3cDLG1X0yEi3Ddkx0CG3AWT74JATRqJs3N+YyIawAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAABAAAAAQAAAAIAAAABAAAAAQAAAAQAAAAPAAAAAAAAAAAAAAACAAAAAQAAAAEAAAACAAAAAQAAAAEAAAAEAAAADwAAAAAAAAAAAAAAAgAAAAEAAAABAAAAAgAAAAEAAAABAAAABAAAAA8AAAAAAAAAAAAAAAIAAAABAAAAAQAAAAIAAAABAAAAAQAAAAQAAAAPAAAAAAAAAAAAAAACAAAAAQAAAAEAAAACAAAAAQAAAAEAAAAEAAAADwAAAAAAAAAAAAAAAgAAAAEAAAABAAAAAgAAAAEAAAABAAAABAAAAA8AAAAAAAAAAAAAAAIAAAABAAAAAQAAAAIAAAABAAAAAQAAAAQAAAAPAAAAAAAAAAAAAAACAAAAAQAAAAEAAAACAAAAAQAAAAEAAAAEAAAADwAAAAAAAAADAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAgAAAAAAAAD//wAAAQAAAAEAAAABAAAACAAAAAEAAAABAAAAAQAAAAgAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAA=="));
+        PsoDb.Write(f, 'C', Convert.FromBase64String("y60ZMXSv4HzU6C3cDLG1X0yEi3C9wznd2tEEfvps1E0adB8UPJCzOAEAAAAAAAAA"));
+        return true;
+    }
+
+    static IEnumerable<string> Runtimes(Game game) =>
+        new[] { Warming.Warmer.AgilityDir(game.ExePath), GameFiles.SystemFolder(game) }.OfType<string>().Select(d => GameFiles.Find(d, "D3D12Core.dll"));
+
+    /// <summary>The shaders of the D3D12 runtime's D3D12Core.dll and of the overlay DLLs, as <see cref="Blobs"/> reads them:
+    /// the runtime's own PSOs, which most D3D12 games create first, and the overlays' use them.</summary>
+    public static (HashSet<string> Runtime, HashSet<string> Overlay) FrontShaders(Game game)
+    {
+        static HashSet<string> Of(IEnumerable<string> dlls) => dlls.Select(TryScan).OfType<MiddlewareImage>().SelectMany(i => i.Containers.Keys).ToHashSet();
+        return (Of(Runtimes(game)), Of(OverlayDlls()));
+    }
+
+    /// <summary>The overlay DLLs Steam and the EOS SDK load into a game on Windows: Steam's from its own folder, EOS's from the
+    /// folders the SDK reads from SOFTWARE\Epic Games\EOS OverlayPath (HKLM's 32-bit view, HKLM's 64-bit view, HKCU; drive-letter
+    /// paths only), each once.</summary>
+    static List<string> OverlayDlls()
+    {
+        var dlls = new List<string>();
+        if (!OperatingSystem.IsWindows()) return dlls;
+        try { dlls.Add(Path.Combine(SteamSource.Root(), "gameoverlayrenderer64.dll")); }
+        catch (Exception e) when (e is IOException or System.Security.SecurityException) { }
+        // the EOS service's install writes HKLM's 32-bit view (WOW6432Node), the Epic Games Launcher HKCU
+        foreach (var (hive, view) in new[] { (RegistryHive.LocalMachine, RegistryView.Registry32), (RegistryHive.LocalMachine, RegistryView.Registry64), (RegistryHive.CurrentUser, RegistryView.Default) })
+            try
+            {
+                using var root = RegistryKey.OpenBaseKey(hive, view);
+                using var key = root.OpenSubKey(@"SOFTWARE\Epic Games\EOS");
+                if (key?.GetValue("OverlayPath") is string eos && !eos.Contains('\0') && Path.IsPathFullyQualified(eos) && Path.GetPathRoot(eos) is { Length: 3 })
+                    dlls.Add(Path.Combine(GameFiles.DirKey(eos), "EOSOVH-Win64-Shipping.dll"));
+            }
+            catch (Exception e) when (e is IOException or System.Security.SecurityException or UnauthorizedAccessException or ArgumentException) { }
+        dlls.RemoveAll(p => p.Contains('\0'));   // FileInfo throws on it
+        return [.. dlls.Distinct(StringComparer.OrdinalIgnoreCase)];
     }
 
     internal static MiddlewareImage? TryScan(string path)
@@ -581,7 +647,8 @@ public sealed class MiddlewarePacks(string dir)
 
     /// <summary>Writes the plan's pack entries ('M') into gen.db: each entry's shader containers read from this install's
     /// copy of its DLL (read-only), then the entry. An entry is skipped when that copy doesn't hold one of its shaders (or
-    /// its root signature: neither in the plan nor in the DLL), or when the DLL isn't there. One already in scskiller.db
+    /// its root signature: neither in the plan nor in the DLL), or when the DLL isn't there. A DLL whose shaders an entry
+    /// needs that can't be read, or whose folder's anti-cheat check couldn't finish, throws an IOException. One already in scskiller.db
     /// is left to it when every blob it uses is there too; otherwise its missing blobs come from the DLL (the record stays
     /// in scskiller.db: the warm loads both files' blobs first), or, when the DLL lacks them too, it's skipped and listed in
     /// <see cref="MaterializeResult.DropFromMain"/>. <paramref name="written"/>: blob hashes gen.db / scskiller.db already
@@ -589,8 +656,15 @@ public sealed class MiddlewarePacks(string dir)
     public static MaterializeResult Materialize(IEnumerable<Rec> mRecords, Game game, IReadOnlySet<string> planBlobs, ISet<string> written,
         IReadOnlySet<string> inMain, Stream gen)
     {
-        var dlls = Middleware.Detect(game);
+        string? unfinished = null;
+        var dlls = Middleware.Detect(game, why => unfinished = why);
         var images = new Dictionary<string, MiddlewareImage?>(StringComparer.OrdinalIgnoreCase);
+        IOException Unreadable(string dll, string why) => new($"{game.Name}: couldn't read {dll} ({why}), the next compile tries again");
+        T Read<T>(string dll, Func<T> read)
+        {
+            try { return read(); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { throw Unreadable(dll, e.Message); }
+        }
         int entries = 0, done = 0, recorded = 0, filled = 0;
         var skipped = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var drop = new HashSet<string>();
@@ -603,11 +677,14 @@ public sealed class MiddlewarePacks(string dir)
             var pso = Parse(e);
             var need = pso.Stages.Values.Append(pso.Rs).Where(h => h != Zero && !written.Contains(h) && !planBlobs.Contains(h)).Distinct().ToList();
             if (recordedHere && need.Count == 0) { recorded++; continue; }
-            if (!images.TryGetValue(dll, out var image))
-                images[dll] = image = dlls.FirstOrDefault(d => d.Packable && d.Name.Equals(dll, StringComparison.OrdinalIgnoreCase)) is { } d ? Middleware.TryScan(d.Path) : null;
+            // a DLL that couldn't be read fails the materialize: skipping its entries would compile the game without them
+            if (need.Count > 0 && unfinished != null) throw Unreadable(dll, unfinished);
+            MiddlewareImage? image = null;
+            if (need.Count > 0 && !images.TryGetValue(dll, out image))
+                images[dll] = image = dlls.FirstOrDefault(d => d.Packable && d.Name.Equals(dll, StringComparison.OrdinalIgnoreCase)) is { } d ? Read(dll, () => Middleware.Scan(d.Path)) : null;
             var bytes = new List<(string, byte[])>();
             foreach (var h in need)
-                if (image?.Read(h) is { } b) bytes.Add((h, b));
+                if (image is { } img && Read(dll, () => img.Read(h)) is { } b) bytes.Add((h, b));
                 else { bytes = null; break; }
             if (bytes == null)
             {

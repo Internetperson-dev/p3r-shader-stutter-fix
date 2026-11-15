@@ -2,13 +2,16 @@
 
 namespace SCSKiller.Core.App;
 
-public sealed record WhatsNewSection(string Version, IReadOnlyList<string> Bullets);
+/// <summary><paramref name="Group"/>: a "### " heading, the version a group of headings came from.</summary>
+public sealed record WhatsNewLine(string Text, bool Heading = false, bool Group = false);
+
+public sealed record WhatsNewSection(string Version, IReadOnlyList<WhatsNewLine> Lines);
 
 public enum SpanKind { Plain, Bold, Code, Link }
 
 public sealed record Span(string Text, SpanKind Kind = SpanKind.Plain, string? Url = null);
 
-/// <summary>"What's new" after an update: the bullets of the embedded CHANGELOG.md's "## [X.Y.Z]" section, the one
+/// <summary>"What's new" after an update: the headings and bullets of the embedded CHANGELOG.md's "## [X.Y.Z]" section, the one
 /// the release notes are taken from. A pre-release or internal build shows its X.Y.Z's
 /// section, or nothing.</summary>
 public static partial class WhatsNew
@@ -17,6 +20,12 @@ public static partial class WhatsNew
 
     [GeneratedRegex(@"^## \[(\d+\.\d+\.\d+)\]")]
     private static partial Regex Released();
+
+    [GeneratedRegex(@"^\*\*([^*]+)\*\*\s*$")]
+    private static partial Regex Subheading();
+
+    [GeneratedRegex(@"^On (?<os>Windows|Linux)(,| with )")]
+    private static partial Regex OnOs();
 
     [GeneratedRegex(@"\*\*(?<b>[^*]+)\*\*|`(?<c>[^`]+)`|\[(?<t>[^\]]+)\]\((?<u>https://[^)\s]+)\)")]
     private static partial Regex Inline();
@@ -44,18 +53,26 @@ public static partial class WhatsNew
 
     public static WhatsNewSection? Section(string changelog, string version)
     {
-        var bullets = new List<string>();
-        var inside = false;
+        var lines = new List<WhatsNewLine>();
+        bool inside = false, otherOs = false;
         foreach (var raw in changelog.Split('\n'))
         {
             var line = raw.TrimEnd('\r');
             if (line.StartsWith("## ")) inside = line.Contains($"[{version}]");
             else if (!inside) continue;
-            else if (line.StartsWith("- ")) bullets.Add(line[2..].Trim());
-            else if (line.StartsWith("  ") && line.Trim().Length > 0 && bullets.Count > 0) bullets[^1] += " " + line.Trim();
+            else if (line.StartsWith("### ")) lines.Add(new(line[4..].Trim(), Heading: true, Group: true));
+            else if (Subheading().Match(line) is { Success: true } m) lines.Add(new(m.Groups[1].Value.Trim(), Heading: true));
+            else if (line.StartsWith("- ")) { if (!(otherOs = OtherOs(line[2..]))) lines.Add(new(line[2..].Trim())); }
+            else if (line.StartsWith("  ") && line.Trim().Length > 0 && !otherOs && lines.Count > 0 && !lines[^1].Heading) lines[^1] = new(lines[^1].Text + " " + line.Trim());
         }
-        return bullets.Count > 0 ? new(version, bullets.Select(b => FirstSentence(b)).ToList()) : null;
+        // a heading left without lines (all another OS's) goes too
+        for (var i = lines.Count - 1; i >= 0; i--)
+            if (lines[i].Heading && (i + 1 == lines.Count || lines[i + 1].Heading && (!lines[i].Group || lines[i + 1].Group))) lines.RemoveAt(i);
+        return lines.Any(l => !l.Heading) ? new(version, lines.Select(l => l.Heading ? l : new(FirstSentence(l.Text))).ToList()) : null;
     }
+
+    /// <summary>A bullet for another OS than this one, which the CHANGELOG starts "On Linux, " or "On Windows with NVIDIA, ".</summary>
+    static bool OtherOs(string text) => OnOs().Match(text) is { Success: true } m && !OperatingSystem.IsOSPlatform(m.Groups["os"].Value);
 
     /// <summary>A bullet's first sentence: the dialog stays short, the release notes have the rest.</summary>
     static string FirstSentence(string s) => s.IndexOf(". ", StringComparison.Ordinal) is var end and > 0 ? s[..(end + 1)] : s;

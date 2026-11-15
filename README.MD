@@ -48,6 +48,9 @@ because `P3R.exe` has already loaded its D3D12 DLL for the current launch.
 Async mode avoids blocking the game start, but it can cause visible graphical glitches and does not eliminate every
 hitch. It is the original *Persona 3 Reload Stuttering Fix DX12 Async Compile* behaviour, not a precompile.
 
+Async mode copies `d3d12.dll` beside `P3R.exe`, so it needs a game folder you can write to. Game Pass installs live in a
+read-only `WindowsApps` folder: use Precompile mode there.
+
 Switching back to **Precompile** removes the shim the mod installed. The mod tracks the files it placed and never
 overwrites or deletes a `d3d12.dll` that belongs to another mod or to the game.
 
@@ -101,6 +104,8 @@ The GitHub Actions workflow builds everything on Windows. It downloads the pinne
 For a local build you need the .NET 9 and .NET 10 SDKs on Windows:
 
 ```powershell
+# The project template writes its normal build output to this folder and requires the variable.
+$env:RELOADEDIIMODS = "$PWD/Publish/reloaded-mods"
 # 1. Download and extract SCSKiller v1.4.7, then copy its cli\ and native\ files into P3R.ShaderPreload\prewarm
 #    (cli\ next to scskiller.exe, native\ as a sibling of cli\).
 # 2. Publish the modified CLI.

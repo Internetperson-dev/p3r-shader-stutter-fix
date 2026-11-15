@@ -118,6 +118,13 @@ dotnet publish P3R.ShaderPreload/P3R.ShaderPreload.csproj -c Release --self-cont
 `P3R.ShaderPreload\prewarm` is generated and is not committed. Without it the mod still builds, and at runtime it
 logs that the helper is missing and lets the game start.
 
+### Releases
+
+Every successful build on `main` publishes a GitHub release with the mod zip attached. The version is the highest
+existing `vMAJOR.MINOR.PATCH` tag with the patch incremented. To move to a new minor or major version, raise
+`ModVersion` in `P3R.ShaderPreload\ModConfig.json`; the next build uses it when it is higher than the newest tag.
+Pushing a `v*` tag instead builds that exact version and attaches the zip to that tag's release.
+
 ## Credits
 
 - [SCSKiller](https://github.com/BlueHeisenberg/SCSKiller) by BlueHeisenberg: shader/pipeline discovery, planning,

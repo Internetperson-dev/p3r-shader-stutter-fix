@@ -1,13 +1,13 @@
 {
   "ModId": "P3R.ShaderPreload",
-  "ModName": "Preload Persona 3 Reload Shaders",
+  "ModName": "Persona 3 Reload Shader Preload",
   "ModAuthor": "Internetperson-dev",
-  "ModVersion": "1.0.0",
-  "ModDescription": "Reduces shader compilation stutter in Persona 3 Reload by preloading shaders.",
+  "ModVersion": "2.0.0",
+  "ModDescription": "Precompiles Persona 3 Reload's shaders before the game starts, or installs asynchronous shader compilation. Reduces shader-compilation stutter. Powered by SCSKiller.",
   "ModDll": "P3R.ShaderPreload.dll",
   "ModIcon": "Preview.png",
-  "ModR2RManagedDll32": "x86/P3R.ShaderPreload.dll",
-  "ModR2RManagedDll64": "x64/P3R.ShaderPreload.dll",
+  "ModR2RManagedDll32": "",
+  "ModR2RManagedDll64": "",
   "ModNativeDll32": "",
   "ModNativeDll64": "",
   "IsLibrary": false,
@@ -16,6 +16,6 @@
   "IsUniversalMod": false,
   "ModDependencies": [ "reloaded.sharedlib.hooks" ],
   "OptionalDependencies": [],
-  "SupportedAppId": [],
-  "ProjectUrl": ""
+  "SupportedAppId": [ "p3r.exe" ],
+  "ProjectUrl": "https://github.com/Internetperson-dev/p3r-shader-stutter-fix"
 }

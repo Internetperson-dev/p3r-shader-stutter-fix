@@ -1,0 +1,8 @@
+# Build output
+bin/
+obj/
+Publish/
+*.user
+
+# Staged by CI from the pinned SCSKiller release (see .github/workflows/reloaded.yml)
+P3R.ShaderPreload/prewarm/
